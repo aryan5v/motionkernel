@@ -539,6 +539,39 @@ def test_shape_frequency_aggregation():
     assert sum(region.shape_frequency.values()) >= 30
 
 
+def test_empty_profiler_shapes_do_not_create_invalid_frequency_key():
+    profiler_rows = [
+        OperatorHotspot(
+            name="motionkernel::transformer.blocks",
+            op_key="motionkernel::transformer.blocks",
+            calls=40,
+            cuda_time_us=500.0,
+            self_cuda_time_us=0.0,
+            input_shapes=[()],
+            parent_module="transformer.blocks",
+        ),
+    ]
+    fx_regions = [
+        GraphRegion.build(
+            name="transformer.blocks",
+            operations=["aten::mul"],
+            inputs=[_tensor("x")],
+            parent_module="transformer.blocks",
+            shape_frequency={"observed": 40},
+        ),
+    ]
+
+    correlated, unmatched = correlate_profiler_to_regions(
+        profiler_rows,
+        fx_regions,
+        total_cuda_time_us=1000.0,
+    )
+
+    assert unmatched == ()
+    assert correlated[0].shape_frequency == {"observed": 40}
+    assert "" not in correlated[0].as_dict()["shape_frequency"]
+
+
 def test_rejection_reasons_aggregation():
     """Test that rejection reasons are aggregated from multiple sources."""
     profiler_rows = [

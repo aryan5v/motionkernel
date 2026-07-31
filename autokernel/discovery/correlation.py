@@ -276,13 +276,17 @@ def correlate_profiler_to_regions(
         for match in matches:
             if match.profiler_row.input_shapes:
                 # Create a shape key from input shapes
-                shape_key = "|".join(
+                shape_parts = [
                     "x".join(str(d) for d in shape)
                     for shape in match.profiler_row.input_shapes
-                )
-                merged_shape_freq[shape_key] = (
-                    merged_shape_freq.get(shape_key, 0) + match.profiler_row.calls
-                )
+                    if shape
+                ]
+                if shape_parts:
+                    shape_key = "|".join(shape_parts)
+                    merged_shape_freq[shape_key] = (
+                        merged_shape_freq.get(shape_key, 0)
+                        + match.profiler_row.calls
+                    )
 
         # Calculate confidence
         safety_reasons = tuple(reject_region(accumulator.base_region.operations))
