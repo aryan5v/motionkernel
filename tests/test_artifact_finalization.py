@@ -398,9 +398,10 @@ def _diagnostics(run_dir: Path, decisions, count: int | None = None) -> Path:
             )
         }
     }
+    payload = {"dispatch": dispatch}
     if decisions is not None:
-        dispatch["decisions"] = decisions
-    path.write_text(json.dumps({"dispatch": dispatch}), encoding="utf-8")
+        payload["decisions"] = decisions
+    path.write_text(json.dumps(payload), encoding="utf-8")
     return path
 
 

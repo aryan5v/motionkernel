@@ -375,7 +375,7 @@ def _selected_artifact_ids(path: Path, payload: Mapping[str, Any]) -> tuple[str,
         raise ProductionAdapterError(
             "dispatch reason_counts.artifact_selected must be a non-negative integer"
         )
-    decisions = dispatch.get("decisions")
+    decisions = payload.get("decisions")
     if decisions is None:
         if expected:
             raise ProductionAdapterError(

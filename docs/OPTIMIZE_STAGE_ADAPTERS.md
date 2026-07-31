@@ -79,12 +79,12 @@ requires both halves of the record to agree:
 ```json
 {
   "dispatch": {
-    "reason_counts": {"artifact_selected": 1},
-    "decisions": [
-      {"artifact_id": "candidate-one", "reason": "artifact_selected"},
-      {"artifact_id": "candidate-two", "reason": "fingerprint_mismatch"}
-    ]
-  }
+    "reason_counts": {"artifact_selected": 1}
+  },
+  "decisions": [
+    {"artifact_id": "candidate-one", "reason": "artifact_selected"},
+    {"artifact_id": "candidate-two", "reason": "fingerprint_mismatch"}
+  ]
 }
 ```
 
@@ -184,4 +184,3 @@ The stage result reports the finalized bundle paths and every decision:
 - The profile adapter currently assumes a single profiler export path. A
   multi-rank workload needs a future aggregation contract for rank-suffixed
   exports before discovery can rank the complete workload.
-
