@@ -21,6 +21,7 @@ from autokernel.discovery import (
     rank_regions,
     write_discovery_report,
 )
+from autokernel.specgen import SpecGenerationError, write_generated_artifacts
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -44,6 +45,17 @@ def _parser() -> argparse.ArgumentParser:
     )
     ingest.add_argument("profile", type=Path)
     ingest.add_argument("--output", type=Path, required=True)
+    specgen = sub.add_parser(
+        "specgen",
+        help="Generate a fail-closed KernelSpec from one captured region",
+    )
+    specgen.add_argument("report", type=Path)
+    specgen.add_argument("--region", required=True, help="Graph fingerprint")
+    specgen.add_argument(
+        "--output",
+        type=Path,
+        default=Path("workspace/generated_specs"),
+    )
     return parser
 
 
@@ -57,8 +69,18 @@ def main(argv: list[str] | None = None) -> int:
             print(f"operators: {len(report.operators)}")
             print(f"output: {args.output}")
             return 0
+        if args.command == "specgen":
+            paths = write_generated_artifacts(
+                args.report,
+                args.output,
+                fingerprint=args.region,
+            )
+            print("SPECGEN: PASS")
+            for name, path in paths.items():
+                print(f"{name}: {path}")
+            return 0
         report = load_discovery_report(args.report)
-    except DiscoveryError as exc:
+    except (DiscoveryError, SpecGenerationError) as exc:
         print(f"DISCOVERY: FAIL\n{exc}", file=sys.stderr)
         return 2
 

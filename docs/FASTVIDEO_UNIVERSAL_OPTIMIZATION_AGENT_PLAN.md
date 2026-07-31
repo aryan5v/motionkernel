@@ -434,7 +434,7 @@ FastVideo PR: https://github.com/aryan5v/FastVideo/pull/18
   launcher that loads a workload manifest, runs one mode per process, and
   writes structured result JSON.
 
-### Workstream 2 (in progress)
+### Workstream 2
 
 MotionKernel:
 
@@ -492,3 +492,34 @@ MotionKernel:
   validated ranked regions. Because the top Wan region is a whole block with
   rejected operations, Workstream 4 must include safe allowlisted subregion
   derivation or explicitly conclude that the region cannot yet be specified.
+
+### Workstream 4 (in progress)
+
+- FastVideo capture schema 2 adds `attributes.executable_ir` for successful
+  export captures. It records generic lifted/runtime tensor metadata, exact
+  operand wiring, safe constants, and output selection without values,
+  parameter paths, source, prompts, or activations.
+- MotionKernel's `autokernel/specgen/` validates that IR, checks it against the
+  canonical operation list, isolates the best connected allowlisted component,
+  and writes a `KernelSpec`, eager candidate, manifest, and weighted corpus
+  through `discovery.py specgen`.
+- The initial exact-overload allowlist is evidence-driven: elementwise
+  arithmetic, LayerNorm, casts, reshapes/views, broadcast transforms,
+  transpose/permute, slicing, and tuple selection. Unknown targets and
+  argument expressions fail closed.
+- CPU validation covers invalid fingerprints/IR, forward references,
+  non-allowlisted execution, safe boundary isolation, CLI artifact round-trip,
+  call-count corpus weighting, BF16 tolerance selection, and zero-tolerance
+  generated-reference parity with the three handwritten Wan references.
+- Plan gap found during implementation: a region's ordered operation names and
+  dependency strings are not sufficient to reconstruct executable semantics.
+  Operand-aware IR was therefore added instead of guessing argument order or
+  outputs. Also, each current region is one shape variant, so the first
+  generated corpus faithfully contains that exact observation and weight;
+  cross-region multi-shape aggregation is deferred rather than inventing
+  intermediate shapes.
+- The production Wan tensor dimensions are too large for exhaustive
+  zero-tolerance CPU allocations (individual cases can exceed a gigabyte).
+  CPU parity uses small tensors with the identical operation/dtype boundaries;
+  the real captured production shape is validated with the unchanged GPU
+  harness before this workstream exits.

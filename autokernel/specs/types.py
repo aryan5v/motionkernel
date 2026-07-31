@@ -55,6 +55,7 @@ BytesFn = Callable[[SizeMap, int], "int | float"]
 STANDARD_SIZE_LABELS: tuple[str, ...] = ("small", "medium", "large")
 
 _NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_GRAPH_FINGERPRINT_RE = re.compile(r"^[0-9a-f]{32}$")
 
 
 class SpecValidationError(ValueError):
@@ -265,6 +266,9 @@ class KernelSpec:
             strings coming from the profiler.
         starter_kernels: backend name -> starter kernel file.
         speedup_estimate: human-readable extraction hint, e.g. ``"2-3x"``.
+        graph_fingerprint: optional 128-bit lowercase hexadecimal identity of
+            the captured graph region from which this specification was
+            derived. It is provenance metadata, not executable input.
         default_shape: extraction fallback when a profiled shape cannot be
             parsed. Defaults to the ``large`` size.
         output_spec: optional structured-output policy. ``None`` compares every
@@ -291,6 +295,7 @@ class KernelSpec:
     shape_aliases: Mapping[str, str] | Sequence[tuple[str, str]] = ()
     starter_kernels: Mapping[str, Any] | Sequence[tuple[str, Any]] = ()
     speedup_estimate: str | None = None
+    graph_fingerprint: str | None = None
     default_shape: SizeMap | None = None
     output_spec: OutputSpec | Mapping[str, Any] | None = None
     backward_spec: BackwardSpec | Mapping[str, Any] | None = None
@@ -686,6 +691,15 @@ def validate_spec(
             "name",
             "operation name must be identifier-like (letters, digits, underscore; "
             "not starting with a digit)",
+        )
+    if spec.graph_fingerprint is not None and (
+        not isinstance(spec.graph_fingerprint, str)
+        or not _GRAPH_FINGERPRINT_RE.fullmatch(spec.graph_fingerprint)
+    ):
+        raise _fail(
+            name,
+            "graph_fingerprint",
+            "must be 32 lowercase hexadecimal characters",
         )
 
     if not callable(spec.reference_fn):

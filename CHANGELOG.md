@@ -25,6 +25,13 @@
 - Profiled Wan 2.1 T2V 1.3B and LTX-2 distilled T2V generations on GB200
   through the model-agnostic path and ingested both into validated, ranked
   discovery reports
+- Added fail-closed graph-derived `KernelSpec` generation under
+  `autokernel/specgen/` and `discovery.py specgen`: exact allowlisted ATen
+  execution over operand-aware metadata IR, safe subregion isolation, graph
+  fingerprint/timing provenance, generated eager starter, and weighted
+  production corpus artifacts
+- Added optional validated `KernelSpec.graph_fingerprint` provenance and CPU
+  zero-tolerance parity coverage against all three handwritten Wan references
 
 ### Model optimization campaigns
 
