@@ -2,6 +2,11 @@
 
 ## Unreleased (downstream)
 
+- Connected `optimize.py` production stages to the existing FastVideo
+  generation/profile launcher, MotionKernel discovery/spec generation and
+  artifact packager, and hash-verified end-to-end candidate validation. Search
+  and isolated validation remain explicit external commands; packaging rejects
+  synthetic or prematurely promoted evidence.
 - Added the resumable `optimize.py` V1 control plane with isolated JSON stage
   contracts, wall-clock and per-candidate budgets, durable receipts/morning
   reports, and end-to-end-only promotion gates.

@@ -18,10 +18,10 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import sys
 from pathlib import Path
 from typing import Any
 
+from .adapters import ProductionAdapterError, run_production_stage
 from .types import STAGE_RESULT_SCHEMA_VERSION
 
 
@@ -135,26 +135,27 @@ def _simulate(stage: str, run_dir: Path, outcome: str) -> int:
 
 
 def _run_real(stage: str, run_dir: Path, repo_root: Path) -> int:
-    """Best-effort real wiring; fails closed with structured result if unavailable."""
-    # Real GPU FastVideo stages are not executed on CPU hosts. Emit a clear
-    # failed contract so resume/debug remain possible.
-    _write_result(
-        run_dir,
-        stage,
-        {
-            "schema_version": STAGE_RESULT_SCHEMA_VERSION,
-            "stage": stage,
-            "status": "failed",
-            "message": (
-                f"default stage driver has no CPU implementation for {stage!r}; "
-                "provide stage_commands overrides or set MOTIONKERNEL_SIMULATE=1 "
-                "for offline smoke. GPU stages require a FastVideo checkout on a "
-                "compute node."
-            ),
-            "metrics": {"repo_root": str(repo_root)},
-        },
-    )
-    return 1
+    """Run one concrete adapter, failing through the stage-result contract."""
+    try:
+        payload = run_production_stage(stage, run_dir)
+    except Exception as exc:  # noqa: BLE001 - preserve the subprocess JSON contract
+        message = str(exc)
+        if not isinstance(exc, ProductionAdapterError):
+            message = f"{type(exc).__name__}: {message}"
+        _write_result(
+            run_dir,
+            stage,
+            {
+                "schema_version": STAGE_RESULT_SCHEMA_VERSION,
+                "stage": stage,
+                "status": "failed",
+                "message": message,
+                "metrics": {"repo_root": str(repo_root)},
+            },
+        )
+        return 1
+    _write_result(run_dir, stage, payload)
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:

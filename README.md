@@ -367,16 +367,22 @@ Re-running the same command resumes completed stages. A changed model,
 workload, baseline, adapter command, or validation policy is rejected on
 resume; use a new output directory or `--no-resume` for a fresh campaign.
 
-GPU adapters can be supplied with `--stage-commands commands.json`. The file
-maps stage names to argv arrays and supports `{stage}`, `{run_dir}`,
+Built-in production adapters now run the FastVideo baseline/profile launcher,
+MotionKernel discovery/spec generation and packaging, and the final FastVideo
+A/B validation. Kernel `search` and `isolated_validate` remain external and
+must be supplied with `--stage-commands commands.json`. The file maps stage
+names to argv arrays and supports `{stage}`, `{run_dir}`,
 `{repo_root}`, `{fastvideo_checkout}`, `{workload}`, `{model}`, `{baseline}`,
-and `{artifact_dir}` placeholders. The control plane writes `state.json`,
+and `{artifact_dir}` placeholders. The isolated-validation command hands real
+benchmark evidence and package inputs back through `package_requests`; see
+[`docs/OPTIMIZE_STAGE_ADAPTERS.md`](docs/OPTIMIZE_STAGE_ADAPTERS.md) for the
+contract. The control plane writes `state.json`,
 per-stage inputs/results/logs, command receipts, `receipt.json`, and
 `morning_report.md`. A kernel is promoted only when the final end-to-end run
 meets the configured threshold; an isolated benchmark can never promote it.
-The V1 control-plane branch intentionally fails closed when a real stage has no
-adapter; the GPU integration supplies these commands rather than running work
-on the controller process.
+The built-in adapters still run inside stage subprocesses. They fail closed on
+missing FastVideo outputs, malformed metadata, absent benchmark evidence,
+failed parity, or dispatch that never selected the candidate.
 
 For a CPU-only contract smoke test, set `MOTIONKERNEL_SIMULATE=1` and optionally
 `MOTIONKERNEL_SIMULATE_OUTCOME=promoted|no_worthwhile_candidate|fail_at:STAGE`.
