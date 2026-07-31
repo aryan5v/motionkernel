@@ -20,12 +20,13 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any, Callable, Iterator, Mapping, Sequence
+from typing import Any, Self
 
 from .ranking import classify_pattern_family
-from .safety import is_region_safe, normalize_op_name, reject_region
+from .safety import normalize_op_name, reject_region
 from .types import (
     DiscoveryReport,
     GraphBreakRecord,
@@ -54,6 +55,8 @@ _FORBIDDEN_SERIALIZED_KEYS = frozenset(
 )
 
 _SAFE_SCALAR_TYPES = (bool, int, float, str)
+_CAPTURE_MODES = ("symbolic", "export", "dynamo")
+_NO_OUTPUT = object()
 
 
 @dataclass(frozen=True)
@@ -64,6 +67,17 @@ class CaptureResult:
     graph_breaks: tuple[GraphBreakRecord, ...]
     unsupported: tuple[UnsupportedOpRecord, ...]
     operations: tuple[str, ...]
+    capture_mode: str | None = None
+    mode_failures: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class _TraceResult:
+    """Internal graph capture result, including fail-closed diagnostics."""
+
+    graph: Any
+    mode: str
+    structural_rejections: tuple[str, ...] = ()
 
 
 @dataclass
@@ -102,6 +116,59 @@ def _tensor_meta_from_example(name: str, tensor: Any) -> TensorMeta:
         device_type=device_type,
         requires_grad=requires_grad,
     )
+
+
+def _safe_tensor_name(name: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9._-]", "_", name).strip("._-")
+    if not cleaned or not re.match(r"^[A-Za-z0-9]", cleaned):
+        cleaned = f"tensor_{cleaned}"
+    return cleaned[:128]
+
+
+def _flatten_tensor_examples(value: Any, *, prefix: str) -> list[tuple[str, Any]]:
+    """Return tensor leaves with structural names, never tensor values."""
+    import torch
+
+    if isinstance(value, torch.Tensor):
+        return [(_safe_tensor_name(prefix), value)]
+    leaves: list[tuple[str, Any]] = []
+    if isinstance(value, (tuple, list)):
+        for index, item in enumerate(value):
+            leaves.extend(
+                _flatten_tensor_examples(item, prefix=f"{prefix}_{index}")
+            )
+    elif isinstance(value, Mapping):
+        for key, item in value.items():
+            leaves.extend(
+                _flatten_tensor_examples(
+                    item,
+                    prefix=f"{prefix}_{_safe_tensor_name(str(key))}",
+                )
+            )
+    return leaves
+
+
+def _input_tensor_examples(
+    args: Sequence[Any],
+    kwargs: Mapping[str, Any],
+) -> tuple[tuple[str, Any], ...]:
+    leaves: list[tuple[str, Any]] = []
+    for index, value in enumerate(args):
+        leaves.extend(
+            _flatten_tensor_examples(value, prefix=f"input_{index}")
+        )
+    for key, value in kwargs.items():
+        leaves.extend(
+            _flatten_tensor_examples(
+                value,
+                prefix=f"kwarg_{_safe_tensor_name(str(key))}",
+            )
+        )
+    return tuple(leaves)
+
+
+def _output_tensor_examples(output: Any) -> tuple[tuple[str, Any], ...]:
+    return tuple(_flatten_tensor_examples(output, prefix="output"))
 
 
 def _shape_frequency_key(inputs: Sequence[TensorMeta]) -> str:
@@ -159,6 +226,8 @@ def _function_to_op_key(target: Any) -> str:
 
 
 def _is_safe_constant_value(value: Any) -> bool:
+    if value is None:
+        return True
     if isinstance(value, _SAFE_SCALAR_TYPES):
         if isinstance(value, float):
             import math
@@ -166,7 +235,7 @@ def _is_safe_constant_value(value: Any) -> bool:
             return math.isfinite(value)
         if isinstance(value, str):
             # Short enum-like tags only — never free-form source/prompts.
-            return 0 < len(value) <= 64 and "\n" not in value
+            return bool(re.fullmatch(r"[A-Za-z0-9_.:/-]{1,64}", value))
         return True
     if isinstance(value, (list, tuple)):
         if len(value) > 32:
@@ -196,49 +265,70 @@ def _extract_graph_structure(graph: Any) -> tuple[list[str], list[str], dict[str
     structural: list[str] = []
     node_index: dict[str, int] = {}
 
+    def node_names(value: Any) -> Iterator[str]:
+        name = getattr(value, "name", None)
+        if name is not None and hasattr(value, "op"):
+            yield name
+        elif isinstance(value, Mapping):
+            for item in value.values():
+                yield from node_names(item)
+        elif isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+            for item in value:
+                yield from node_names(item)
+
+    def record_dependencies(node: Any, index: int) -> None:
+        seen: set[str] = set()
+        for arg_name in node_names((node.args, node.kwargs or {})):
+            if arg_name in node_index and arg_name not in seen:
+                dependencies.append(f"{node_index[arg_name]}->{index}")
+                seen.add(arg_name)
+
+    def record_constants(node: Any, op_key: str) -> None:
+        for arg_index, value in enumerate(node.args):
+            if hasattr(value, "op"):
+                continue
+            if _is_safe_constant_value(value):
+                safe_constants[f"{node.name}.arg{arg_index}"] = value
+            elif value is not None and not tuple(node_names(value)):
+                structural.append(
+                    f"{op_key}: unsafe positional constant arg{arg_index}"
+                )
+        for key, value in (node.kwargs or {}).items():
+            if hasattr(value, "op"):
+                continue
+            if _is_safe_constant_value(value):
+                safe_constants[f"{node.name}.{key}"] = value
+            elif value is not None and not tuple(node_names(value)):
+                structural.append(
+                    f"{op_key}: unsafe or non-scalar constant {key!r}"
+                )
+
     for node in graph.nodes:
         if node.op in {"placeholder", "output"}:
             continue
         if node.op == "get_attr":
-            # Parameters / buffers are weights — never export values.
-            # Only allow pure Python attribute scalars if present on the module
-            # via string target name recording (no value read here).
+            # A graph attribute can be a parameter, buffer, tensor constant, or
+            # Python value. Without reading it we cannot prove which; never
+            # serialize it or claim the graph is self-contained.
             target = str(node.target)
-            if any(
-                part in target.lower()
-                for part in ("weight", "bias", "embed", "param", "buffer")
-            ):
-                structural.append(f"get_attr:{target}: weights/parameters forbidden")
-            else:
-                # Record attribute *name* only as a dependency tag, not its value.
-                safe_constants.setdefault(f"attr:{target}", True)
+            structural.append(
+                f"get_attr:{target}: lifted attribute value not exported"
+            )
             continue
         if node.op == "call_function":
             op_key = _function_to_op_key(node.target)
             idx = len(operations)
             node_index[node.name] = idx
             operations.append(op_key)
-            for arg in node.args:
-                arg_name = getattr(arg, "name", None)
-                if arg_name in node_index:
-                    dependencies.append(f"{node_index[arg_name]}->{idx}")
-            for key, value in (node.kwargs or {}).items():
-                if _is_safe_constant_value(value):
-                    safe_constants[f"{node.name}.{key}"] = value
-                elif value is not None and not hasattr(value, "op"):
-                    # Non-safe non-node kwarg — fail closed (unknown constant).
-                    structural.append(
-                        f"{op_key}: unsafe or non-scalar constant {key!r}"
-                    )
+            record_dependencies(node, idx)
+            record_constants(node, op_key)
         elif node.op == "call_method":
             op_key = normalize_op_name(f"aten::{node.target}")
             idx = len(operations)
             node_index[node.name] = idx
             operations.append(op_key)
-            for arg in node.args:
-                arg_name = getattr(arg, "name", None)
-                if arg_name in node_index:
-                    dependencies.append(f"{node_index[arg_name]}->{idx}")
+            record_dependencies(node, idx)
+            record_constants(node, op_key)
         elif node.op == "call_module":
             # Nested modules collapse to a single opaque node — fail closed for
             # leaf fusion search unless expanded.
@@ -256,31 +346,103 @@ def _extract_graph_structure(graph: Any) -> tuple[list[str], list[str], dict[str
     for op in operations:
         if "scatter" in op or "index_put" in op or "copy_" in op:
             structural.append(f"{op}: potential aliasing mutation")
+        if "as_strided" in op or op.endswith("::alias"):
+            structural.append(f"capture_safety:unknown_aliasing:{op}")
 
     return operations, dependencies, safe_constants, structural
 
 
-def _trace_module(module: Any, *, tracer: str, example_inputs: Sequence[Any]) -> Any:
-    """Return an FX GraphModule or raise."""
-    import torch
-    import torch.fx as fx
+def _capture_failure_reason(mode: str, exc: Exception) -> str:
+    """Classify a tracer failure without serializing its potentially sensitive text."""
+    text = str(exc).lower()
+    if any(
+        marker in text
+        for marker in (
+            "data-dependent",
+            "data dependent",
+            "guardondatadependentsymnode",
+            "could not guard on data-dependent",
+            ".item()",
+        )
+    ):
+        code = "data_dependent_control_flow"
+    elif any(
+        marker in text
+        for marker in (
+            "control flow",
+            "proxy object",
+            "symbolically traced variables",
+            "cannot be iterated",
+        )
+    ):
+        code = "dynamic_python_control_flow"
+    elif "alias" in text:
+        code = "unknown_aliasing"
+    elif "unsupported" in text or "not supported" in text:
+        code = "unsupported_graph"
+    else:
+        code = "trace_error"
+    return f"capture_failed:{mode}:{code}:{type(exc).__name__}"
 
-    if tracer == "symbolic":
-        return fx.symbolic_trace(module)
-    if tracer == "dynamo":
-        try:
-            exported = torch._dynamo.export(module)(*example_inputs)
-            # dynamo.export returns (gm, guards) on some versions or an object
-            if isinstance(exported, tuple):
-                return exported[0]
-            graph_module = getattr(exported, "graph_module", None)
-            if graph_module is not None:
-                return graph_module
-            return exported
-        except Exception:
-            # Fall back to symbolic when Dynamo cannot export the module.
-            return fx.symbolic_trace(module)
-    raise ValueError(f"unsupported tracer {tracer!r}; use 'symbolic' or 'dynamo'")
+
+def _trace_module(
+    module: Any,
+    *,
+    mode: str,
+    example_inputs: Sequence[Any],
+    example_kwargs: Mapping[str, Any],
+) -> _TraceResult:
+    """Capture one graph mode or raise; never silently changes mode."""
+    import torch
+    from torch import fx
+
+    if mode == "symbolic":
+        return _TraceResult(graph=fx.symbolic_trace(module), mode=mode)
+    if mode == "export":
+        exported_program = torch.export.export(
+            module,
+            tuple(example_inputs),
+            dict(example_kwargs),
+            strict=False,
+        )
+        structural: list[str] = []
+        signature = getattr(exported_program, "graph_signature", None)
+        for field_name in ("user_inputs_to_mutate", "buffers_to_mutate"):
+            mutations = getattr(signature, field_name, None)
+            if mutations:
+                structural.append(
+                    f"capture_safety:{mode}:mutation_signature:{field_name}"
+                )
+        return _TraceResult(
+            graph=exported_program.graph_module,
+            mode=mode,
+            structural_rejections=tuple(structural),
+        )
+    if mode == "dynamo":
+        exported = torch._dynamo.export(module, aten_graph=True)(
+            *example_inputs,
+            **dict(example_kwargs),
+        )
+        graph_module = getattr(exported, "graph_module", None)
+        if graph_module is None and isinstance(exported, tuple):
+            graph_module = exported[0]
+        return _TraceResult(
+            graph=graph_module if graph_module is not None else exported,
+            mode=mode,
+        )
+    raise ValueError(
+        f"unsupported capture mode {mode!r}; use auto, symbolic, export, or dynamo"
+    )
+
+
+def _capture_mode_order(tracer: str) -> tuple[str, ...]:
+    if tracer in {"auto", "fallback"}:
+        return _CAPTURE_MODES
+    if tracer in _CAPTURE_MODES:
+        return (tracer,)
+    raise ValueError(
+        f"unsupported tracer {tracer!r}; use auto, symbolic, export, or dynamo"
+    )
 
 
 def _assert_region_metadata_only(region: GraphRegion) -> None:
@@ -309,7 +471,9 @@ def capture_module_region(
     *,
     name: str,
     parent_module: str | None = None,
-    tracer: str = "symbolic",
+    tracer: str = "auto",
+    example_kwargs: Mapping[str, Any] | None = None,
+    example_output: Any = _NO_OUTPUT,
     calls: int = 1,
     shape_frequency: Mapping[str, int] | None = None,
 ) -> CaptureResult:
@@ -326,35 +490,62 @@ def capture_module_region(
     dependencies: list[str] = []
     safe_constants: dict[str, Any] = {}
 
-    try:
-        traced = _trace_module(
-            module, tracer=tracer, example_inputs=example_inputs
-        )
-        graph = getattr(traced, "graph", None)
-        if graph is None:
-            raise RuntimeError("trace result has no FX graph")
-        operations, dependencies, safe_constants, structural = _extract_graph_structure(
-            graph
-        )
-        for reason in structural:
+    kwargs = dict(example_kwargs or {})
+    mode_failures: list[str] = []
+    capture_mode: str | None = None
+    traced_graph: Any = None
+    structural: list[str] = []
+    for mode in _capture_mode_order(tracer):
+        try:
+            traced = _trace_module(
+                module,
+                mode=mode,
+                example_inputs=example_inputs,
+                example_kwargs=kwargs,
+            )
+            graph = getattr(traced.graph, "graph", None)
+            if graph is None:
+                raise RuntimeError("trace result has no FX graph")
+            candidate = _extract_graph_structure(graph)
+            if not candidate[0]:
+                raise RuntimeError("trace result has no tensor operations")
+            operations, dependencies, safe_constants, structural = candidate
+            structural.extend(traced.structural_rejections)
+            traced_graph = graph
+            capture_mode = mode
+            break
+        except Exception as exc:  # noqa: BLE001 - failures become safe codes
+            reason = _capture_failure_reason(mode, exc)
+            mode_failures.append(reason)
             breaks.append(
                 GraphBreakRecord(scope=name, reason=reason, count=1)
             )
-    except Exception as exc:  # noqa: BLE001 - capture failures are data
-        breaks.append(
-            GraphBreakRecord(
-                scope=name,
-                reason=f"fx_trace_failed: {type(exc).__name__}: {exc}",
-                count=1,
-            )
+
+    if traced_graph is None or capture_mode is None:
+        return CaptureResult(
+            None,
+            tuple(breaks),
+            tuple(unsupported),
+            (),
+            capture_mode=None,
+            mode_failures=tuple(mode_failures),
         )
-        return CaptureResult(None, tuple(breaks), tuple(unsupported), ())
+
+    for reason in structural:
+        breaks.append(GraphBreakRecord(scope=name, reason=reason, count=1))
 
     if not operations:
         breaks.append(
             GraphBreakRecord(scope=name, reason="empty_graph", count=1)
         )
-        return CaptureResult(None, tuple(breaks), tuple(unsupported), ())
+        return CaptureResult(
+            None,
+            tuple(breaks),
+            tuple(unsupported),
+            (),
+            capture_mode=capture_mode,
+            mode_failures=tuple(mode_failures),
+        )
 
     safe_constants = _sanitize_safe_constants(safe_constants)
     rejection = list(reject_region(operations))
@@ -378,22 +569,34 @@ def capture_module_region(
                 )
             )
 
+    tensor_inputs = _input_tensor_examples(example_inputs, kwargs)
+    if not tensor_inputs:
+        breaks.append(
+            GraphBreakRecord(scope=name, reason="no_tensor_inputs", count=1)
+        )
+        return CaptureResult(
+            None,
+            tuple(breaks),
+            tuple(unsupported),
+            tuple(operations),
+            capture_mode=capture_mode,
+            mode_failures=tuple(mode_failures),
+        )
     inputs = tuple(
-        _tensor_meta_from_example(f"input_{i}", tensor)
-        for i, tensor in enumerate(example_inputs)
+        _tensor_meta_from_example(input_name, tensor)
+        for input_name, tensor in tensor_inputs
     )
     outputs: tuple[TensorMeta, ...] = ()
     try:
-        with torch.no_grad():
-            out = module(*example_inputs)
-        if isinstance(out, torch.Tensor):
-            outputs = (_tensor_meta_from_example("output_0", out),)
-        elif isinstance(out, (tuple, list)):
-            outputs = tuple(
-                _tensor_meta_from_example(f"output_{i}", item)
-                for i, item in enumerate(out)
-                if isinstance(item, torch.Tensor)
-            )
+        if example_output is _NO_OUTPUT:
+            with torch.no_grad():
+                out = module(*example_inputs, **kwargs)
+        else:
+            out = example_output
+        outputs = tuple(
+            _tensor_meta_from_example(output_name, tensor)
+            for output_name, tensor in _output_tensor_examples(out)
+        )
     except Exception as exc:  # noqa: BLE001
         breaks.append(
             GraphBreakRecord(
@@ -422,6 +625,13 @@ def capture_module_region(
         shape_frequency=freq,
         cuda_time_us=0.0,
         self_cuda_time_us=0.0,
+        attributes={
+            "capture_mode": capture_mode,
+            "capture_attempts": list(_capture_mode_order(tracer))[
+                : list(_capture_mode_order(tracer)).index(capture_mode) + 1
+            ],
+            "capture_failures": list(mode_failures),
+        },
     )
     _assert_region_metadata_only(region)
     return CaptureResult(
@@ -429,6 +639,8 @@ def capture_module_region(
         graph_breaks=tuple(breaks),
         unsupported=tuple(unsupported),
         operations=tuple(operations),
+        capture_mode=capture_mode,
+        mode_failures=tuple(mode_failures),
     )
 
 
@@ -437,10 +649,10 @@ def capture_callable_region(
     example_inputs: Sequence[Any],
     *,
     name: str,
-    tracer: str = "symbolic",
+    tracer: str = "auto",
 ) -> CaptureResult:
     """Wrap a pure function as an nn.Module and capture it."""
-    import torch.nn as nn
+    from torch import nn
 
     arity = len(example_inputs)
     if arity == 1:
@@ -476,6 +688,7 @@ def capture_callable_region(
             ),
             (),
             (),
+            capture_mode=None,
         )
 
     return capture_module_region(
@@ -497,7 +710,7 @@ class RegionCaptureSession:
     def __init__(
         self,
         *,
-        tracer: str = "symbolic",
+        tracer: str = "auto",
         name_prefix: str = "region",
     ) -> None:
         self.tracer = tracer
@@ -519,15 +732,16 @@ class RegionCaptureSession:
     ) -> None:
         """Install a forward hook that captures each invocation."""
 
-        def _hook(_mod: Any, inputs: tuple[Any, ...], _output: Any) -> None:
+        def _hook(
+            _mod: Any,
+            inputs: tuple[Any, ...],
+            kwargs: dict[str, Any],
+            output: Any,
+        ) -> None:
             if self._capturing:
                 return
             self._call_counters[scope] += 1
-            # Only tensor args are used for signatures.
-            tensor_inputs = tuple(
-                arg for arg in inputs if hasattr(arg, "shape") and hasattr(arg, "dtype")
-            )
-            if not tensor_inputs:
+            if not _input_tensor_examples(inputs, kwargs):
                 self._graph_breaks.append(
                     GraphBreakRecord(
                         scope=scope,
@@ -548,10 +762,12 @@ class RegionCaptureSession:
             try:
                 result = capture_module_region(
                     _mod,
-                    tensor_inputs,
+                    inputs,
                     name=capture_name,
                     parent_module=scope,
                     tracer=self.tracer,
+                    example_kwargs=kwargs,
+                    example_output=output,
                 )
             finally:
                 self._capturing = False
@@ -569,7 +785,7 @@ class RegionCaptureSession:
             acc.breaks.extend(result.graph_breaks)
             acc.unsupported.extend(result.unsupported)
 
-        handle = module.register_forward_hook(_hook)
+        handle = module.register_forward_hook(_hook, with_kwargs=True)
         self._hooks.append(handle)
 
     def register_named_children(
@@ -599,10 +815,10 @@ class RegionCaptureSession:
             handle.remove()
         self._hooks.clear()
 
-    def __enter__(self) -> "RegionCaptureSession":
+    def __enter__(self) -> Self:
         return self
 
-    def __exit__(self, *exc: Any) -> None:
+    def __exit__(self, *exc: object) -> None:
         self.close()
 
     def regions(self) -> tuple[GraphRegion, ...]:
@@ -690,7 +906,7 @@ class RegionCaptureSession:
 def capture_model_regions(
     root: Any,
     *,
-    tracer: str = "symbolic",
+    tracer: str = "auto",
     predicate: Callable[[str, Any], bool] | None = None,
     name_prefix: str = "region",
 ) -> Iterator[RegionCaptureSession]:
