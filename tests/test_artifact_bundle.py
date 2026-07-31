@@ -234,6 +234,23 @@ def test_packager_refuses_overwriting_without_permission(tmp_path):
     assert replaced.artifact_id == "fused-scale-add-sm90"
 
 
+@pytest.mark.parametrize("relation", ["same", "output_inside_source", "source_inside_output"])
+def test_packager_refuses_overlapping_source_and_output(tmp_path, relation):
+    source = _payload(tmp_path)
+    if relation == "same":
+        output = source
+    elif relation == "output_inside_source":
+        output = source / "bundle"
+    else:
+        output = tmp_path / "outer"
+        output.mkdir()
+        source.rename(output / "payload")
+        source = output / "payload"
+
+    with pytest.raises(ArtifactError, match="must not overlap"):
+        package_artifact(source, output, _sections(), overwrite=True)
+
+
 def test_tampered_kernel_is_rejected(tmp_path):
     output, _ = _bundle(tmp_path)
     # A same-length edit: the size check cannot catch this, only the hash can.
@@ -332,6 +349,31 @@ def test_entry_point_loads_and_runs_from_trusted_root(tmp_path):
 
     assert candidate(3.0, 1.0) == pytest.approx(7.0)
     assert manifest.entry_point.symbol == "fused_scale_add"
+
+
+def test_entry_point_module_names_do_not_collide_after_id_sanitizing(tmp_path):
+    first_source = _payload(tmp_path, name="first")
+    second_source = _payload(tmp_path, name="second")
+    store = tmp_path / "store"
+    first = package_artifact(
+        first_source,
+        store / "first",
+        _sections(artifact_id="my-kernel-v1"),
+    )
+    second = package_artifact(
+        second_source,
+        store / "second",
+        _sections(artifact_id="my_kernel_v1"),
+    )
+
+    first_candidate = load_entry_point(
+        store / "first", trusted_root=store, manifest=first
+    )
+    second_candidate = load_entry_point(
+        store / "second", trusted_root=store, manifest=second
+    )
+
+    assert first_candidate.__module__ != second_candidate.__module__
 
 
 def test_entry_point_refuses_bundle_outside_trusted_root(tmp_path):

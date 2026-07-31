@@ -13,7 +13,9 @@ The rules this module enforces, in order:
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
+import re
 import sys
 from pathlib import Path
 from typing import Any, Callable
@@ -67,7 +69,9 @@ def load_entry_point(
         )
 
     entry_file = _resolve_inside(directory, directory / verified.entry_point.file)
-    module_name = f"{_MODULE_NAMESPACE}.{verified.artifact_id.replace('.', '_')}"
+    readable_id = re.sub(r"[^A-Za-z0-9_]", "_", verified.artifact_id)
+    unique_id = hashlib.sha256(verified.artifact_id.encode("utf-8")).hexdigest()[:16]
+    module_name = f"{_MODULE_NAMESPACE}.{readable_id}_{unique_id}"
     spec = importlib.util.spec_from_file_location(module_name, entry_file)
     if spec is None or spec.loader is None:
         raise ArtifactError(

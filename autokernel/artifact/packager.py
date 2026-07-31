@@ -129,6 +129,17 @@ def package_artifact(
     """
     source = Path(source_dir)
     output = Path(output_dir)
+    source_resolved = source.resolve()
+    output_resolved = output.resolve(strict=False)
+    if (
+        source_resolved == output_resolved
+        or source_resolved in output_resolved.parents
+        or output_resolved in source_resolved.parents
+    ):
+        raise ArtifactError(
+            f"artifact bundle {str(output)!r}: source and output directories "
+            "must not overlap"
+        )
     document = build_manifest(
         source,
         sections,
