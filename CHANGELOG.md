@@ -42,6 +42,11 @@
 
 ### Portable artifact bundles
 
+- Added export-subgraph rewrite recipes and exact boundary layout metadata so
+  a searched internal fusion can be inserted into a repeated FastVideo block
+  without replacing the whole block or adding a model-specific runtime path.
+- Graph-derived input generation now preserves observed tensor strides instead
+  of silently benchmarking every boundary as contiguous.
 - Added the versioned artifact bundle contract under `autokernel/artifact/`: a
   strictly validated, metadata-only manifest recording operation identity and
   graph fingerprint, input/output tensor signatures, candidate entry point and

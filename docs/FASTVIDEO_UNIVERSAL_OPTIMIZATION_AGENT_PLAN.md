@@ -523,3 +523,19 @@ MotionKernel:
   CPU parity uses small tensors with the identical operation/dtype boundaries;
   the real captured production shape is validated with the unchanged GPU
   harness before this workstream exits.
+
+### Workstream 5 (Task 3 integration in progress)
+
+- Closed the producer/consumer granularity gap: graph-derived search targets
+  are internal allowlisted subregions, while the original runtime dispatcher
+  could replace only a whole repeated block. Generated manifests now retain a
+  canonical export rewrite recipe and exact boundary tensor layouts.
+- FastVideo can rebuild the representative exported graph against each live
+  block and replace only the selected nodes. Unselected attention/projection
+  code and live per-block parameters remain native; no Wan-specific runtime
+  condition was introduced.
+- Quarantined candidates remain disabled in production. A separate explicit
+  validation mode admits them only after isolated benchmark correctness passes,
+  enabling honest native-versus-candidate generation before final promotion.
+- CPU cross-repository proof is complete. Wan GB200 packaging, dispatch parity,
+  and end-to-end timing remain the Task 3 GPU exit criteria.

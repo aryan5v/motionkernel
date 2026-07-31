@@ -53,7 +53,17 @@ _TOP_LEVEL_FIELDS = {
     "evidence",
     "promotion",
 }
-_OPERATION_FIELDS = {"name", "graph_fingerprint", "parent_module", "operations"}
+_OPERATION_FIELDS = {
+    "name",
+    "graph_fingerprint",
+    "parent_module",
+    "operations",
+    "target_kind",
+    "capture_mode",
+    "selected_node_ids",
+    "boundary_refs",
+    "output_node_ids",
+}
 _SIGNATURE_FIELDS = {"inputs", "outputs"}
 _TENSOR_FIELDS = {"name", "shape", "stride", "dtype", "device_type", "requires_grad"}
 _ENTRY_POINT_FIELDS = {"file", "symbol"}
@@ -128,6 +138,8 @@ _SYMBOL_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
 # backslashes that a Windows runtime would reinterpret.
 _RELATIVE_FILE_PATTERN = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9._/-]{0,255}$")
 _VERSION_PATTERN = re.compile(r"^[0-9]+(\.[0-9]+)*[A-Za-z0-9.+_-]*$")
+_IR_NODE_PATTERN = re.compile(r"^n[0-9]+$")
+_IR_REF_PATTERN = re.compile(r"^[pn][0-9]+$")
 
 
 class ArtifactError(ValueError):
@@ -510,6 +522,11 @@ class OperationIdentity:
     graph_fingerprint: str
     parent_module: str
     operations: tuple[str, ...]
+    target_kind: str = "module"
+    capture_mode: str | None = None
+    selected_node_ids: tuple[str, ...] = ()
+    boundary_refs: tuple[str, ...] = ()
+    output_node_ids: tuple[str, ...] = ()
 
     @classmethod
     def from_dict(
@@ -526,6 +543,73 @@ class OperationIdentity:
         )
         if not operations:
             raise _fail(source, f"{location}.operations", "must be a non-empty list")
+        target_kind = raw.get("target_kind", "module")
+        if target_kind not in {"module", "subgraph"}:
+            raise _fail(
+                source,
+                f"{location}.target_kind",
+                "must be 'module' or 'subgraph'",
+            )
+        rewrite_fields = {
+            "capture_mode",
+            "selected_node_ids",
+            "boundary_refs",
+            "output_node_ids",
+        }
+        if target_kind == "module" and rewrite_fields.intersection(raw):
+            raise _fail(
+                source,
+                location,
+                "module targets must not declare subgraph rewrite fields",
+            )
+
+        capture_mode: str | None = None
+        selected_node_ids: tuple[str, ...] = ()
+        boundary_refs: tuple[str, ...] = ()
+        output_node_ids: tuple[str, ...] = ()
+        if target_kind == "subgraph":
+            capture_mode = _text(
+                raw.get("capture_mode"), source, f"{location}.capture_mode"
+            )
+            if capture_mode != "export":
+                raise _fail(
+                    source,
+                    f"{location}.capture_mode",
+                    "subgraph dispatch currently requires 'export'",
+                )
+
+            def refs(field: str, pattern: re.Pattern[str]) -> tuple[str, ...]:
+                items = _sequence(raw.get(field), source, f"{location}.{field}")
+                if not items:
+                    raise _fail(
+                        source, f"{location}.{field}", "must be a non-empty list"
+                    )
+                result = tuple(
+                    _pattern_text(
+                        item,
+                        pattern,
+                        source,
+                        f"{location}.{field}[{index}]",
+                        "a canonical executable-IR reference",
+                    )
+                    for index, item in enumerate(items)
+                )
+                if len(result) != len(set(result)):
+                    raise _fail(
+                        source, f"{location}.{field}", "must not contain duplicates"
+                    )
+                return result
+
+            selected_node_ids = refs("selected_node_ids", _IR_NODE_PATTERN)
+            boundary_refs = refs("boundary_refs", _IR_REF_PATTERN)
+            output_node_ids = refs("output_node_ids", _IR_NODE_PATTERN)
+            if not set(output_node_ids).issubset(selected_node_ids):
+                raise _fail(
+                    source,
+                    f"{location}.output_node_ids",
+                    "must be selected nodes",
+                )
+
         return cls(
             name=_pattern_text(
                 raw.get("name"),
@@ -548,15 +632,31 @@ class OperationIdentity:
                 _text(item, source, f"{location}.operations[{index}]")
                 for index, item in enumerate(operations)
             ),
+            target_kind=target_kind,
+            capture_mode=capture_mode,
+            selected_node_ids=selected_node_ids,
+            boundary_refs=boundary_refs,
+            output_node_ids=output_node_ids,
         )
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        result = {
             "name": self.name,
             "graph_fingerprint": self.graph_fingerprint,
             "parent_module": self.parent_module,
             "operations": list(self.operations),
         }
+        if self.target_kind == "subgraph":
+            result.update(
+                {
+                    "target_kind": self.target_kind,
+                    "capture_mode": self.capture_mode,
+                    "selected_node_ids": list(self.selected_node_ids),
+                    "boundary_refs": list(self.boundary_refs),
+                    "output_node_ids": list(self.output_node_ids),
+                }
+            )
+        return result
 
 
 @dataclass(frozen=True)

@@ -38,6 +38,8 @@ class DerivedSubregion:
     parent_self_cuda_time_us: float
     parent_calls: int
     selected_node_ids: tuple[str, ...]
+    boundary_refs: tuple[str, ...]
+    output_node_ids: tuple[str, ...]
 
 
 def _meta_by_id(ir: ExecutableIR) -> dict[str, ValueMeta]:
@@ -205,6 +207,8 @@ def derive_safe_subregion(region: GraphRegion) -> DerivedSubregion:
         parent_self_cuda_time_us=region.self_cuda_time_us,
         parent_calls=region.calls,
         selected_node_ids=tuple(node.id for node in selected),
+        boundary_refs=tuple(external_refs),
+        output_node_ids=tuple(terminal),
     )
 
 
@@ -263,6 +267,39 @@ def _input_generator_for(ir: ExecutableIR):
         for item in ir.inputs:
             tensor_dtype = _tensor_dtype(item.meta.dtype, requested)
             shape = item.meta.shape
+            stride = item.meta.stride
+            if stride is not None:
+                tensor = torch.empty_strided(
+                    shape,
+                    stride,
+                    device=device,
+                    dtype=tensor_dtype,
+                )
+                if tensor_dtype == torch.bool:
+                    values = torch.randint(
+                        0,
+                        2,
+                        shape,
+                        device=device,
+                        generator=generator,
+                        dtype=torch.int8,
+                    ).bool()
+                    tensor.copy_(values)
+                elif not tensor_dtype.is_floating_point:
+                    values = torch.randint(
+                        0,
+                        7,
+                        shape,
+                        device=device,
+                        generator=generator,
+                        dtype=tensor_dtype,
+                    )
+                    tensor.copy_(values)
+                else:
+                    tensor.normal_(generator=generator)
+                tensor.requires_grad_(item.meta.requires_grad)
+                result[item.name] = tensor
+                continue
             if tensor_dtype == torch.bool:
                 tensor = torch.randint(
                     0, 2, shape, device=device, generator=generator, dtype=torch.int8
@@ -337,14 +374,92 @@ def build_manifest(region: GraphRegion) -> dict[str, Any]:
             "self_cuda_time_us": derived.parent_self_cuda_time_us,
             "calls": derived.parent_calls,
             "timing_scope": "parent_region_not_selected_subregion",
+            "capture_mode": str((region.attributes or {}).get("capture_mode", "")),
         },
         "selected_node_ids": list(derived.selected_node_ids),
+        "boundary_refs": list(derived.boundary_refs),
+        "output_node_ids": list(derived.output_node_ids),
         "dtypes": list(dtypes),
         "sizes": sizes,
         "executable_ir": derived.ir.as_dict(),
     }
 
 
+def build_dispatch_contract(manifest_value: Mapping[str, Any]) -> dict[str, Any]:
+    """Derive the artifact operation/signature sections from generated IR.
+
+    This is the bridge between graph-derived search and runtime rewriting. It
+    preserves only canonical node references and tensor metadata; model
+    parameter paths and values never enter the artifact.
+    """
+    manifest = dict(manifest_value)
+    ir = ExecutableIR.from_dict(manifest.get("executable_ir"))
+    parent = manifest.get("parent")
+    if not isinstance(parent, Mapping):
+        raise SpecGenerationError("generated manifest parent must be an object")
+    if parent.get("capture_mode") != "export":
+        raise SpecGenerationError("subgraph dispatch requires an export capture")
+    selected = tuple(manifest.get("selected_node_ids") or ())
+    boundaries = tuple(manifest.get("boundary_refs") or ())
+    outputs = tuple(manifest.get("output_node_ids") or ())
+    if not selected or not boundaries or not outputs:
+        raise SpecGenerationError("generated manifest has an incomplete rewrite recipe")
+
+    node_by_id = {node.id: node for node in ir.nodes}
+    metadata = _meta_by_id(ir)
+
+    def signature(ref: str, index: int, prefix: str) -> dict[str, Any]:
+        # Generated boundary inputs use aliases. Their order is the canonical
+        # boundary order, so use the corresponding IR input metadata.
+        if prefix == "boundary":
+            try:
+                meta = ir.inputs[index].meta
+            except IndexError as exc:
+                raise SpecGenerationError("rewrite boundary metadata is missing") from exc
+        else:
+            meta = metadata.get(ref)
+            if meta is None:
+                raise SpecGenerationError(f"rewrite output {ref!r} has no tensor metadata")
+        if meta.stride is None or meta.device_type is None:
+            raise SpecGenerationError(
+                f"rewrite {prefix} {ref!r} lacks stride/device metadata"
+            )
+        return {
+            "name": f"{prefix}_{index}",
+            "shape": list(meta.shape),
+            "stride": list(meta.stride),
+            "dtype": meta.dtype,
+            "device_type": meta.device_type,
+            "requires_grad": meta.requires_grad,
+        }
+
+    try:
+        operations = [node_by_id[item].target for item in selected]
+    except KeyError as exc:
+        raise SpecGenerationError("rewrite recipe references an unknown selected node") from exc
+    return {
+        "operation": {
+            "name": str(manifest.get("name", "")),
+            "graph_fingerprint": str(parent.get("fingerprint", "")),
+            "parent_module": str(parent.get("name", "")),
+            "operations": operations,
+            "target_kind": "subgraph",
+            "capture_mode": "export",
+            "selected_node_ids": list(selected),
+            "boundary_refs": list(boundaries),
+            "output_node_ids": list(outputs),
+        },
+        "signature": {
+            "inputs": [
+                signature(ref, index, "boundary")
+                for index, ref in enumerate(boundaries)
+            ],
+            "outputs": [
+                signature(ref, index, "output")
+                for index, ref in enumerate(outputs)
+            ],
+        },
+    }
 def select_region(
     report: DiscoveryReport, fingerprint: str | None = None
 ) -> GraphRegion:

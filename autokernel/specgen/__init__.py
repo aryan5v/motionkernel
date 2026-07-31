@@ -2,6 +2,7 @@
 
 from .generator import (
     DerivedSubregion,
+    build_dispatch_contract,
     build_manifest,
     derive_safe_subregion,
     select_region,
@@ -27,6 +28,7 @@ __all__ = [
     "SpecGenerationError",
     "ValueMeta",
     "build_manifest",
+    "build_dispatch_contract",
     "derive_safe_subregion",
     "execute_ir",
     "load_generated_reference",

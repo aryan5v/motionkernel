@@ -49,7 +49,18 @@ def test_kernel_spec_accepts_graph_fingerprint() -> None:
 
 
 def _meta(shape: tuple[int, ...], dtype: str = "float32") -> dict:
-    return {"shape": list(shape), "dtype": dtype, "requires_grad": False}
+    stride = []
+    running = 1
+    for dim in reversed(shape):
+        stride.append(running)
+        running *= max(dim, 1)
+    return {
+        "shape": list(shape),
+        "stride": list(reversed(stride)),
+        "dtype": dtype,
+        "device_type": "cuda",
+        "requires_grad": False,
+    }
 
 
 def _input(name: str, shape: tuple[int, ...], dtype: str = "float32") -> dict:
@@ -147,7 +158,7 @@ def _region_for(ir: ExecutableIR, operations: list[str]) -> GraphRegion:
         cuda_time_us=1000.0,
         self_cuda_time_us=900.0,
         calls=240,
-        attributes={"executable_ir": ir.as_dict()},
+        attributes={"executable_ir": ir.as_dict(), "capture_mode": "export"},
     )
 
 
@@ -439,6 +450,10 @@ def test_artifact_round_trip_carries_parent_provenance(tmp_path) -> None:
     assert manifest["parent"]["timing_scope"] == (
         "parent_region_not_selected_subregion"
     )
+    assert manifest["parent"]["capture_mode"] == "export"
+    assert manifest["selected_node_ids"]
+    assert manifest["boundary_refs"]
+    assert manifest["output_node_ids"]
     report = DiscoveryReport(
         producer={"name": "test", "version": "1"},
         workload={"workload_id": "wan-test", "model_id": "wan"},
@@ -455,6 +470,27 @@ def test_artifact_round_trip_carries_parent_provenance(tmp_path) -> None:
     assert loaded.name == manifest["name"]
     corpus = json.loads(paths["corpus"].read_text())
     assert corpus["cases"][0]["weight"] == region.calls
+
+
+def test_generated_manifest_builds_subgraph_dispatch_contract() -> None:
+    from autokernel.specgen import build_dispatch_contract
+
+    region = _region_for(_gated_residual_ir(), [
+        "aten::_to_copy",
+        "aten::_to_copy",
+        "aten::unsqueeze",
+        "aten::mul",
+        "aten::add",
+        "aten::_to_copy",
+    ])
+    manifest = build_manifest(region)
+    contract = build_dispatch_contract(manifest)
+
+    assert contract["operation"]["target_kind"] == "subgraph"
+    assert contract["operation"]["graph_fingerprint"] == region.fingerprint
+    assert contract["operation"]["boundary_refs"] == manifest["boundary_refs"]
+    assert contract["signature"]["inputs"]
+    assert contract["signature"]["outputs"]
 
 
 def test_discovery_specgen_cli_writes_bench_artifacts(tmp_path, repo_root) -> None:
