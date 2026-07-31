@@ -23,7 +23,7 @@ from collections import defaultdict
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any, Self
+from typing import Any
 
 from .ranking import classify_pattern_family
 from .safety import normalize_op_name, reject_region
@@ -815,7 +815,7 @@ class RegionCaptureSession:
             handle.remove()
         self._hooks.clear()
 
-    def __enter__(self) -> Self:
+    def __enter__(self) -> RegionCaptureSession:
         return self
 
     def __exit__(self, *exc: object) -> None:
