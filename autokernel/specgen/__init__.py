@@ -7,6 +7,7 @@ from .generator import (
     derive_safe_subregion,
     select_region,
     spec_from_manifest,
+    write_runtime_adapter,
     write_generated_artifacts,
 )
 from .ir import (
@@ -35,5 +36,6 @@ __all__ = [
     "load_manifest",
     "select_region",
     "spec_from_manifest",
+    "write_runtime_adapter",
     "write_generated_artifacts",
 ]

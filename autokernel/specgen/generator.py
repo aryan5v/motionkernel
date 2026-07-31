@@ -25,6 +25,7 @@ from .runtime import execute_ir, load_manifest
 
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9_]+")
 _LOW_PRECISION = {"bfloat16", "float16"}
+_SAFE_FILE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.-]{0,127}\.py$")
 
 
 @dataclass(frozen=True)
@@ -460,6 +461,59 @@ def build_dispatch_contract(manifest_value: Mapping[str, Any]) -> dict[str, Any]
             ],
         },
     }
+
+
+def write_runtime_adapter(
+    manifest_value: Mapping[str, Any],
+    output_path: str | Path,
+    *,
+    candidate_file: str = "candidate.py",
+    candidate_symbol: str = "kernel_fn",
+    entry_symbol: str = "fused_subgraph",
+) -> Path:
+    """Write the positional runtime adapter for a generated search candidate."""
+    manifest = dict(manifest_value)
+    ir = ExecutableIR.from_dict(manifest.get("executable_ir"))
+    build_dispatch_contract(manifest)
+    if not _SAFE_FILE.fullmatch(candidate_file):
+        raise SpecGenerationError("candidate_file must be a safe Python basename")
+    for value, name in (
+        (candidate_symbol, "candidate_symbol"),
+        (entry_symbol, "entry_symbol"),
+    ):
+        if not value.isidentifier():
+            raise SpecGenerationError(f"{name} must be a Python identifier")
+    input_names = tuple(item.name for item in ir.inputs)
+    source = f'''"""Generated positional adapter for a graph-derived candidate."""
+from __future__ import annotations
+
+import importlib.util
+from pathlib import Path
+
+_CANDIDATE_PATH = Path(__file__).with_name({candidate_file!r})
+_SPEC = importlib.util.spec_from_file_location(
+    "autokernel_runtime_candidate", _CANDIDATE_PATH
+)
+if _SPEC is None or _SPEC.loader is None:
+    raise ImportError(f"cannot load candidate {{_CANDIDATE_PATH}}")
+_MODULE = importlib.util.module_from_spec(_SPEC)
+_SPEC.loader.exec_module(_MODULE)
+_KERNEL = getattr(_MODULE, {candidate_symbol!r})
+_INPUT_NAMES = {input_names!r}
+
+
+def {entry_symbol}(module, *values):
+    del module
+    if len(values) != len(_INPUT_NAMES):
+        raise TypeError(
+            f"expected {{len(_INPUT_NAMES)}} boundary tensors, got {{len(values)}}"
+        )
+    return _KERNEL(**dict(zip(_INPUT_NAMES, values, strict=True)))
+'''
+    output = Path(output_path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(source, encoding="utf-8")
+    return output
 def select_region(
     report: DiscoveryReport, fingerprint: str | None = None
 ) -> GraphRegion:

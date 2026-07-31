@@ -493,6 +493,42 @@ def test_generated_manifest_builds_subgraph_dispatch_contract() -> None:
     assert contract["signature"]["outputs"]
 
 
+def test_runtime_adapter_converts_boundary_positionals_to_search_kwargs(
+    tmp_path, torch_mod
+) -> None:
+    import importlib.util
+
+    from autokernel.specgen import write_runtime_adapter
+
+    region = _region_for(_gated_residual_ir(), [
+        "aten::_to_copy",
+        "aten::_to_copy",
+        "aten::unsqueeze",
+        "aten::mul",
+        "aten::add",
+        "aten::_to_copy",
+    ])
+    manifest = build_manifest(region)
+    candidate = tmp_path / "candidate.py"
+    candidate.write_text(
+        "def kernel_fn(**inputs):\n"
+        "    values = list(inputs.values())\n"
+        "    return values[0] + values[1]\n",
+        encoding="utf-8",
+    )
+    adapter = write_runtime_adapter(manifest, tmp_path / "entry.py")
+    spec = importlib.util.spec_from_file_location("test_runtime_adapter", adapter)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    generated_ir = ExecutableIR.from_dict(manifest["executable_ir"])
+    inputs = [torch_mod.ones(item.meta.shape) for item in generated_ir.inputs]
+
+    actual = module.fused_subgraph(object(), *inputs)
+
+    torch_mod.testing.assert_close(actual, inputs[0] + inputs[1])
+
+
 def test_discovery_specgen_cli_writes_bench_artifacts(tmp_path, repo_root) -> None:
     ir = _gated_residual_ir()
     region = _region_for(ir, _operations_for(ir))

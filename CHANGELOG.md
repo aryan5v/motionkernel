@@ -47,6 +47,8 @@
   without replacing the whole block or adding a model-specific runtime path.
 - Graph-derived input generation now preserves observed tensor strides instead
   of silently benchmarking every boundary as contiguous.
+- Added a generated runtime adapter that converts FastVideo's positional
+  subgraph boundaries into the keyword input contract used by searched kernels.
 - Added the versioned artifact bundle contract under `autokernel/artifact/`: a
   strictly validated, metadata-only manifest recording operation identity and
   graph fingerprint, input/output tensor signatures, candidate entry point and
