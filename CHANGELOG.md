@@ -2,6 +2,18 @@
 
 ## Unreleased (downstream)
 
+- Added post-validation artifact finalization: `autokernel/artifact/finalizer.py`
+  converts a verified quarantined bundle into a `promoted` or `rejected` bundle
+  from measured full-generation evidence, preserving every payload byte and the
+  isolated benchmark record, writing the manifest atomically outside the bundle,
+  and re-verifying the finished bundle. Promotion requires output parity,
+  real dispatch selection, an `improved` classification, and the configured
+  end-to-end speedup threshold; anything incomplete or failed stays quarantined.
+  Finalization is write-once, so a resumed campaign can never weaken or corrupt
+  an already finalized artifact. The new `finalize` optimize stage reads the
+  selected artifact ids from FastVideo's `dispatch.json` decisions, fails closed
+  on ambiguous diagnostics or a missing selected bundle, leaves unselected
+  bundles quarantined, and reports the finalized paths and decisions.
 - Connected `optimize.py` production stages to the existing FastVideo
   generation/profile launcher, MotionKernel discovery/spec generation and
   artifact packager, and hash-verified end-to-end candidate validation. Search

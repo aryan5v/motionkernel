@@ -115,6 +115,7 @@ def _decide_terminal(
 
     # Explicit stage recommendations win when present.
     for stage_name in (
+        "finalize",
         "end_to_end_validate",
         "discover",
         "specgen",

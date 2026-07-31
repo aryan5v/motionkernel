@@ -31,6 +31,14 @@ from .compat import (
     check_compatibility,
     match_artifact,
 )
+from .finalizer import (
+    FINALIZED_DECISIONS,
+    GENERATION_METRIC,
+    MEASURED_CLASSIFICATIONS,
+    FinalizationResult,
+    GenerationOutcome,
+    finalize_bundle,
+)
 from .loader import load_entry_point
 from .packager import (
     DEFAULT_PRODUCER,
@@ -70,7 +78,10 @@ __all__ = [
     "DEFAULT_PRODUCER",
     "DISTRIBUTED_MODES",
     "EXECUTION_MODES",
+    "FINALIZED_DECISIONS",
+    "GENERATION_METRIC",
     "MANIFEST_FILENAME",
+    "MEASURED_CLASSIFICATIONS",
     "PROMOTION_DECISIONS",
     "REASON_ARCHITECTURE_MISMATCH",
     "REASON_CUDA_VERSION",
@@ -95,7 +106,9 @@ __all__ = [
     "EntryPoint",
     "Evidence",
     "FileDigest",
+    "FinalizationResult",
     "GenerationEvidence",
+    "GenerationOutcome",
     "GraphSignature",
     "MatchResult",
     "OperationIdentity",
@@ -109,6 +122,7 @@ __all__ = [
     "describe_bundle",
     "discover_bundles",
     "file_sha256",
+    "finalize_bundle",
     "load_bundles",
     "load_entry_point",
     "match_artifact",

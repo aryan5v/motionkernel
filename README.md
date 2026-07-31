@@ -361,16 +361,18 @@ python optimize.py \
 ```
 
 The durable pipeline is `baseline → profile → discover → specgen → search →
-isolated_validate → package → end_to_end_validate`. Every stage runs in an
-isolated subprocess and exchanges versioned JSON through the run directory.
+isolated_validate → package → end_to_end_validate → finalize`. Every stage runs
+in an isolated subprocess and exchanges versioned JSON through the run directory.
 Re-running the same command resumes completed stages. A changed model,
 workload, baseline, adapter command, or validation policy is rejected on
 resume; use a new output directory or `--no-resume` for a fresh campaign.
 
 Built-in production adapters now run the FastVideo baseline/profile launcher,
-MotionKernel discovery/spec generation and packaging, and the final FastVideo
-A/B validation. Kernel `search` and `isolated_validate` remain external and
-must be supplied with `--stage-commands commands.json`. The file maps stage
+MotionKernel discovery/spec generation and packaging, the final FastVideo
+A/B validation, and artifact finalization that rewrites the quarantined bundle
+with measured generation evidence and a promoted/rejected decision. Kernel
+`search` and `isolated_validate` remain external and must be supplied with
+`--stage-commands commands.json`. The file maps stage
 names to argv arrays and supports `{stage}`, `{run_dir}`,
 `{repo_root}`, `{fastvideo_checkout}`, `{workload}`, `{model}`, `{baseline}`,
 and `{artifact_dir}` placeholders. The isolated-validation command hands real

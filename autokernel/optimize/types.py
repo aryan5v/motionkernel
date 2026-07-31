@@ -16,6 +16,7 @@ PIPELINE_STAGES: tuple[str, ...] = (
     "isolated_validate",
     "package",
     "end_to_end_validate",
+    "finalize",
 )
 
 TERMINAL_STATUSES: frozenset[str] = frozenset(
@@ -38,6 +39,7 @@ CANDIDATE_STAGE_STATUS: dict[str, str] = {
     "isolated_validate": "isolated_validated",
     "package": "packaged",
     "end_to_end_validate": "end_to_end_validated",
+    "finalize": "finalized",
 }
 
 # Default minimum end-to-end speedup required for promotion (1%).

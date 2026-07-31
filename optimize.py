@@ -50,7 +50,7 @@ def _parser() -> argparse.ArgumentParser:
         description=(
             "Run a resumable MotionKernel overnight optimize campaign "
             "(baseline → profile → discover → specgen → search → "
-            "isolated_validate → package → end_to_end_validate)"
+            "isolated_validate → package → end_to_end_validate → finalize)"
         )
     )
     parser.add_argument(

@@ -14,7 +14,13 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
-from autokernel.artifact import ArtifactError, package_artifact
+from autokernel.artifact import (
+    ArtifactError,
+    GenerationOutcome,
+    finalize_bundle,
+    package_artifact,
+    verify_bundle,
+)
 from autokernel.discovery import (
     DiscoveryError,
     correlate_discovery_report,
@@ -345,6 +351,77 @@ def _dispatch_selected(path: Path) -> tuple[bool, dict[str, Any]]:
     return isinstance(selected, int) and selected > 0, payload
 
 
+def _selected_artifact_ids(path: Path, payload: Mapping[str, Any]) -> tuple[str, ...]:
+    """Artifact ids FastVideo actually dispatched, or fail closed.
+
+    ``reason_counts`` says *how many* selections happened and ``decisions``
+    says *which* artifacts they were. The two must agree exactly: a count with
+    no matching decision record (or the reverse) means the diagnostics cannot
+    identify what ran, and finalizing on that would promote a bundle that was
+    never exercised.
+    """
+    dispatch = payload.get("dispatch")
+    if not isinstance(dispatch, Mapping):
+        raise ProductionAdapterError(
+            f"dispatch diagnostics {path} have no dispatch object"
+        )
+    counts = dispatch.get("reason_counts")
+    if not isinstance(counts, Mapping):
+        raise ProductionAdapterError(
+            f"dispatch diagnostics {path} have no reason_counts object"
+        )
+    expected = counts.get("artifact_selected", 0)
+    if isinstance(expected, bool) or not isinstance(expected, int) or expected < 0:
+        raise ProductionAdapterError(
+            "dispatch reason_counts.artifact_selected must be a non-negative integer"
+        )
+    decisions = dispatch.get("decisions")
+    if decisions is None:
+        if expected:
+            raise ProductionAdapterError(
+                f"dispatch diagnostics {path} report {expected} selection(s) but "
+                "carry no decisions list naming the selected artifact(s)"
+            )
+        return ()
+    if not isinstance(decisions, list):
+        raise ProductionAdapterError("dispatch decisions must be a list")
+
+    selected: list[str] = []
+    matched = 0
+    for index, decision in enumerate(decisions):
+        if not isinstance(decision, Mapping):
+            raise ProductionAdapterError(
+                f"dispatch decisions[{index}] must be an object"
+            )
+        if decision.get("reason") != "artifact_selected":
+            continue
+        matched += 1
+        artifact_id = decision.get("artifact_id")
+        if not isinstance(artifact_id, str) or not artifact_id.strip():
+            raise ProductionAdapterError(
+                f"dispatch decisions[{index}] selected an artifact without an id"
+            )
+        if artifact_id not in selected:
+            selected.append(artifact_id)
+    if matched != expected:
+        raise ProductionAdapterError(
+            f"dispatch diagnostics {path} are ambiguous: reason_counts report "
+            f"{expected} selection(s) but decisions contain {matched}"
+        )
+    return tuple(selected)
+
+
+def _speedup_threshold(config: Mapping[str, Any], workload: Any) -> float:
+    """The stricter of the campaign and workload end-to-end speedup gates."""
+    configured = _finite(config.get("min_e2e_speedup", 1.01), "min_e2e_speedup")
+    declared = (
+        workload.performance.min_end_to_end_speedup
+        if getattr(workload, "performance", None) is not None
+        else 1.01
+    )
+    return max(configured, float(declared))
+
+
 def _end_to_end_validate(run_dir: Path, config: Mapping[str, Any]) -> dict[str, Any]:
     packaged = _prior_result(run_dir, "package")
     artifacts = packaged.get("artifacts")
@@ -374,15 +451,7 @@ def _end_to_end_validate(run_dir: Path, config: Mapping[str, Any]) -> dict[str, 
     )
     candidate_path = generation_dir / "candidate_result.json"
     candidate = load_generation_result(candidate_path)
-    configured_threshold = _finite(
-        config.get("min_e2e_speedup", 1.01), "min_e2e_speedup"
-    )
-    workload_threshold = (
-        workload.performance.min_end_to_end_speedup
-        if workload.performance is not None
-        else 1.01
-    )
-    threshold = max(configured_threshold, workload_threshold)
+    threshold = _speedup_threshold(config, workload)
     memory_limit = (
         workload.performance.max_peak_memory_regression
         if workload.performance is not None
@@ -449,6 +518,144 @@ def _end_to_end_validate(run_dir: Path, config: Mapping[str, Any]) -> dict[str, 
     )
 
 
+def _packaged_bundles(packaged: Mapping[str, Any]) -> tuple[str, list[dict[str, Any]]]:
+    artifacts = packaged.get("artifacts")
+    if not isinstance(artifacts, Mapping):
+        raise ProductionAdapterError("package result has no artifacts object")
+    root = artifacts.get("root")
+    bundles = artifacts.get("bundles")
+    if not isinstance(root, str) or not root:
+        raise ProductionAdapterError("package result has no artifact root")
+    if not isinstance(bundles, list) or not bundles:
+        raise ProductionAdapterError("package result has no packaged bundles")
+    result: list[dict[str, Any]] = []
+    for index, bundle in enumerate(bundles):
+        if not isinstance(bundle, Mapping):
+            raise ProductionAdapterError(f"package bundles[{index}] must be an object")
+        artifact_id = bundle.get("artifact_id")
+        bundle_dir = bundle.get("bundle_dir")
+        if not isinstance(artifact_id, str) or not artifact_id:
+            raise ProductionAdapterError(f"package bundles[{index}] has no artifact_id")
+        if not isinstance(bundle_dir, str) or not bundle_dir:
+            raise ProductionAdapterError(f"package bundles[{index}] has no bundle_dir")
+        result.append({"artifact_id": artifact_id, "bundle_dir": bundle_dir})
+    return root, result
+
+
+def _finalize(run_dir: Path, config: Mapping[str, Any]) -> dict[str, Any]:
+    packaged = _prior_result(run_dir, "package")
+    validated = _prior_result(run_dir, "end_to_end_validate")
+    root, bundles = _packaged_bundles(packaged)
+
+    artifacts = validated.get("artifacts")
+    if not isinstance(artifacts, Mapping) or not isinstance(
+        artifacts.get("dispatch_diagnostics"), str
+    ):
+        raise ProductionAdapterError(
+            "end_to_end_validate result has no dispatch_diagnostics path"
+        )
+    diagnostics_path = Path(artifacts["dispatch_diagnostics"])
+    _, diagnostics = _dispatch_selected(diagnostics_path)
+    selected_ids = _selected_artifact_ids(diagnostics_path, diagnostics)
+
+    metrics = validated.get("metrics")
+    if not isinstance(metrics, Mapping):
+        raise ProductionAdapterError("end_to_end_validate result has no metrics object")
+    parity = validated.get("parity")
+    parity_policy = ""
+    if isinstance(parity, Mapping) and isinstance(parity.get("policy"), str):
+        parity_policy = parity["policy"]
+
+    workload = load_workload(_config_path(config, "workload"))
+    speedup = metrics.get("end_to_end_speedup")
+    outcome = GenerationOutcome(
+        workload_id=workload.workload_id,
+        steps=workload.sampling.num_inference_steps,
+        parity_passed=metrics.get("parity_passed") is True,
+        artifact_selected=(
+            bool(selected_ids) and metrics.get("artifact_selected") is True
+        ),
+        classification=str(metrics.get("classification") or ""),
+        min_speedup=_speedup_threshold(config, workload),
+        speedup=(
+            float(speedup)
+            if isinstance(speedup, (int, float))
+            and not isinstance(speedup, bool)
+            and math.isfinite(float(speedup))
+            else None
+        ),
+        stage_status="failed" if validated.get("recommendation") == "failed" else "ok",
+        parity_policy=parity_policy,
+        baseline_ref=str(artifacts.get("native_result") or ""),
+        candidate_ref=str(artifacts.get("candidate_result") or ""),
+    )
+
+    known = {bundle["artifact_id"] for bundle in bundles}
+    missing = sorted(set(selected_ids) - known)
+    if missing:
+        raise ProductionAdapterError(
+            f"dispatch selected artifact(s) {missing} that the package stage did "
+            "not produce"
+        )
+
+    finalized: list[dict[str, Any]] = []
+    quarantined: list[dict[str, Any]] = []
+    for bundle in bundles:
+        artifact_id = bundle["artifact_id"]
+        bundle_dir = Path(bundle["bundle_dir"])
+        if artifact_id not in selected_ids:
+            # Never exercised by this run: verify it is intact and leave the
+            # packaged quarantine decision exactly as it is.
+            manifest = verify_bundle(bundle_dir)
+            quarantined.append(
+                {
+                    "artifact_id": manifest.artifact_id,
+                    "bundle_dir": str(bundle_dir),
+                    "manifest": str(bundle_dir / "artifact.json"),
+                    "decision": manifest.promotion.decision,
+                    "reason": "artifact was not selected during full generation",
+                    "changed": False,
+                }
+            )
+            continue
+        result = finalize_bundle(bundle_dir, outcome)
+        (finalized if result.decision != "quarantined" else quarantined).append(
+            result.as_dict()
+        )
+
+    promoted = [item for item in finalized if item["decision"] == "promoted"]
+    rejected = [item for item in finalized if item["decision"] == "rejected"]
+    if promoted:
+        recommendation = "promoted"
+        message = f"finalized {len(promoted)} promoted artifact bundle(s)"
+    elif rejected:
+        recommendation = "no_worthwhile_candidate"
+        message = f"rejected {len(rejected)} measured artifact bundle(s)"
+    else:
+        recommendation = "failed"
+        message = "no artifact could be finalized; every bundle remains quarantined"
+    return _result(
+        "finalize",
+        message,
+        metrics={
+            "artifacts_promoted": len(promoted),
+            "artifacts_rejected": len(rejected),
+            "artifacts_quarantined": len(quarantined),
+            "artifacts_selected": len(selected_ids),
+        },
+        recommendation=recommendation,
+        artifacts={
+            "root": root,
+            "finalized": finalized,
+            "quarantined": quarantined,
+        },
+        decisions=[
+            {"artifact_id": item["artifact_id"], "decision": item["decision"]}
+            for item in [*finalized, *quarantined]
+        ],
+    )
+
+
 _ADAPTERS: dict[str, Callable[[Path, Mapping[str, Any]], dict[str, Any]]] = {
     "baseline": _baseline,
     "profile": _profile,
@@ -456,6 +663,7 @@ _ADAPTERS: dict[str, Callable[[Path, Mapping[str, Any]], dict[str, Any]]] = {
     "specgen": _specgen,
     "package": _package,
     "end_to_end_validate": _end_to_end_validate,
+    "finalize": _finalize,
 }
 
 

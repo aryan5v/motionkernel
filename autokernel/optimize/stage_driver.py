@@ -119,6 +119,19 @@ def _simulate(stage: str, run_dir: Path, outcome: str) -> int:
         else:
             metrics = {"classification": "failed"}
             extra["recommendation"] = "failed"
+    elif stage == "finalize":
+        if outcome == "promoted":
+            metrics = {"artifacts_promoted": 1, "artifacts_rejected": 0}
+            message = "quarantined bundle finalized as promoted"
+            extra["recommendation"] = "promoted"
+        elif outcome == "no_worthwhile_candidate":
+            metrics = {"artifacts_promoted": 0, "artifacts_rejected": 1}
+            message = "measured bundle finalized as rejected"
+            extra["recommendation"] = "no_worthwhile_candidate"
+        else:
+            metrics = {"artifacts_promoted": 0, "artifacts_rejected": 0}
+            message = "no bundle could be finalized; quarantine preserved"
+            extra["recommendation"] = "failed"
 
     payload: dict[str, Any] = {
         "schema_version": STAGE_RESULT_SCHEMA_VERSION,
