@@ -15,6 +15,13 @@
   profiler-export ingestion, profiler-to-region timing correlation, and
   Amdahl-style impact ranking with a configurable end-to-end floor through
   the `discovery.py` CLI (`validate`, `rank`, `ingest-profiler`)
+- Added symbolic FX -> non-strict `torch.export` -> Dynamo fallback capture
+  with per-region capture provenance and machine-readable per-mode failures.
+  Exported parameters remain metadata-only, compiler-disabled attention and
+  FastVideo offload wrappers are exposed only inside state-preserving capture
+  scopes, and transient attention context is cleared before serialization.
+- Correlation now ignores profiler rows whose input-shape list contains only
+  empty shapes instead of creating an invalid empty `shape_frequency` key.
 - Profiled Wan 2.1 T2V 1.3B and LTX-2 distilled T2V generations on GB200
   through the model-agnostic path and ingested both into validated, ranked
   discovery reports
