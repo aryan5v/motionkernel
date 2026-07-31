@@ -9,12 +9,11 @@ whether a region is worth searching. Defaults match the universal plan:
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 from .safety import reject_region
 from .types import GraphRegion, OperatorHotspot
-
 
 DEFAULT_IMPACT_FLOOR = 0.005  # 0.5% optimistic end-to-end
 DEFAULT_PROMOTION_TARGET = 0.01  # 1%
@@ -34,6 +33,10 @@ class RankedCandidate:
     meets_promotion_target: bool
     rejection_reasons: tuple[str, ...]
     pattern_family: str | None = None
+    selection_mode: str = "whole_region"
+    parent_rejection_reasons: tuple[str, ...] = ()
+    selected_node_count: int | None = None
+    impact_estimate_kind: str = "measured_region"
 
     def as_dict(self) -> dict:
         return {
@@ -46,6 +49,10 @@ class RankedCandidate:
             "search_worthy": self.search_worthy,
             "meets_promotion_target": self.meets_promotion_target,
             "rejection_reasons": list(self.rejection_reasons),
+            "selection_mode": self.selection_mode,
+            "parent_rejection_reasons": list(self.parent_rejection_reasons),
+            "selected_node_count": self.selected_node_count,
+            "impact_estimate_kind": self.impact_estimate_kind,
             "pattern_family": self.pattern_family or self.region.pattern_family,
             "calls": self.region.calls,
             "cuda_time_us": self.region.cuda_time_us,
@@ -73,6 +80,33 @@ def optimistic_e2e_improvement(
     return max(0.0, share * reducible_fraction)
 
 
+def _probe_safe_subregion(region: GraphRegion) -> tuple[int | None, str | None]:
+    """Return the safe node count for an executable parent, or a rejection.
+
+    Discovery times repeated parent modules because that is the stable runtime
+    boundary. An export graph may contain attention, mutation, or other nodes
+    that cannot be searched while still enclosing a connected pure-tensor
+    epilogue that can. Spec generation is the authoritative safety boundary,
+    so ranking asks it to validate the exact same derived component instead of
+    treating an unsafe parent as an unsafe replacement target.
+
+    The import is deliberately late: ``specgen`` consumes discovery reports,
+    while this optional probe only runs after both packages are initialized.
+    """
+    attributes = region.attributes
+    if not isinstance(attributes, Mapping) or not isinstance(
+        attributes.get("executable_ir"), Mapping
+    ):
+        return None, "safe_subregion_unavailable:no_executable_ir"
+    try:
+        from autokernel.specgen import SpecGenerationError, derive_safe_subregion
+
+        derived = derive_safe_subregion(region)
+    except (ImportError, SpecGenerationError) as exc:
+        return None, f"safe_subregion_unavailable:{type(exc).__name__}:{exc}"
+    return len(derived.ir.nodes), None
+
+
 def classify_pattern_family(operations: Sequence[str]) -> str:
     """Coarse family label for reports; not a correctness claim."""
     ops = " ".join(operations).lower()
@@ -82,12 +116,13 @@ def classify_pattern_family(operations: Sequence[str]) -> str:
         return "normalization"
     if any(tok in ops for tok in ("silu", "gelu", "relu", "sigmoid")):
         return "activation_epilogue"
-    if any(tok in ops for tok in ("permute", "transpose", "contiguous", "clone", "to")):
-        if all(
+    if any(
+        tok in ops for tok in ("permute", "transpose", "contiguous", "clone", "to")
+    ) and all(
             any(x in o for x in ("permute", "transpose", "contiguous", "clone", "to", "view", "reshape"))
             for o in operations
-        ):
-            return "layout_cast_copy"
+    ):
+        return "layout_cast_copy"
     if any(tok in ops for tok in ("mul", "add", "sub", "div")):
         return "elementwise_chain"
     return "unknown"
@@ -114,6 +149,17 @@ def rank_regions(
             share, reducible_fraction=reducible_fraction
         )
         safe = not safety_reasons
+        selection_mode = "whole_region"
+        parent_rejection_reasons: tuple[str, ...] = ()
+        selected_node_count: int | None = None
+        impact_estimate_kind = "measured_region"
+        derivation_error: str | None = None
+        if not safe:
+            selected_node_count, derivation_error = _probe_safe_subregion(region)
+            if selected_node_count is not None:
+                selection_mode = "derived_subregion"
+                parent_rejection_reasons = safety_reasons
+                impact_estimate_kind = "parent_region_upper_bound"
         # Confidence: higher when more calls and pure allowlist.
         confidence = 0.4
         if safe:
@@ -124,9 +170,12 @@ def rank_regions(
             confidence += 0.1
         confidence = min(1.0, confidence)
 
-        search_worthy = safe and improvement >= impact_floor
-        reasons = list(safety_reasons)
-        if safe and improvement < impact_floor:
+        executable = safe or selection_mode == "derived_subregion"
+        search_worthy = executable and improvement >= impact_floor
+        reasons = [] if executable else list(safety_reasons)
+        if not executable and derivation_error is not None:
+            reasons.append(derivation_error)
+        if executable and improvement < impact_floor:
             reasons.append(
                 f"below_impact_floor: optimistic e2e {improvement:.4f} "
                 f"< floor {impact_floor:.4f}"
@@ -147,6 +196,10 @@ def rank_regions(
                 meets_promotion_target=improvement >= promotion_target,
                 rejection_reasons=tuple(reasons),
                 pattern_family=family,
+                selection_mode=selection_mode,
+                parent_rejection_reasons=parent_rejection_reasons,
+                selected_node_count=selected_node_count,
+                impact_estimate_kind=impact_estimate_kind,
             )
         )
 

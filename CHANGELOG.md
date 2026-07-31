@@ -2,6 +2,12 @@
 
 ## Unreleased (downstream)
 
+- Ranking now distinguishes an unsafe timed parent module from a validated
+  executable subregion inside its export graph. High-impact parents are
+  search-worthy only when the unchanged spec-generation safety boundary can
+  derive a connected allowlisted component; parent rejection reasons remain
+  visible and the reported impact is explicitly labeled as a parent-region
+  upper bound.
 - Added post-validation artifact finalization: `autokernel/artifact/finalizer.py`
   converts a verified quarantined bundle into a `promoted` or `rejected` bundle
   from measured full-generation evidence, preserving every payload byte and the

@@ -87,13 +87,13 @@ def derive_safe_subregion(region: GraphRegion) -> DerivedSubregion:
     for index, (node, operation) in enumerate(
         zip(ir.nodes, region.operations, strict=True)
     ):
-        expected = (
-            "aten::select"
-            if node.target == "operator.getitem"
-            else "aten::" + node.target.split(".", 2)[1]
-            if node.target.startswith("aten.")
-            else node.target
-        )
+        if node.target == "operator.getitem":
+            expected = "aten::select"
+        elif node.target.count(".") >= 2:
+            namespace, operation_name, _overload = node.target.split(".", 2)
+            expected = f"{namespace}::{operation_name}"
+        else:
+            expected = node.target
         if expected != operation:
             raise SpecGenerationError(
                 f"region {region.name!r} node {index} target {node.target!r} "

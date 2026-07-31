@@ -539,3 +539,14 @@ MotionKernel:
   enabling honest native-versus-candidate generation before final promotion.
 - CPU cross-repository proof is complete. Wan GB200 packaging, dispatch parity,
   and end-to-end timing remain the Task 3 GPU exit criteria.
+- Wan GB200 acceptance jobs 927 and 928 validated native generation, metadata
+  capture, profiler ingestion, and timing correlation on the current producer.
+  Job 927 exposed a PyTorch-distribution-specific `OpOverload` identity mismatch;
+  FastVideo now uses canonical operator schemas. Job 928 then ranked the export
+  parent at 83.4139% of measured self CUDA time but stopped because ranking
+  applied whole-parent rejection reasons before spec generation could isolate
+  its safe component.
+- Ranking now probes the same fail-closed safe-subregion derivation used by
+  spec generation. A derived candidate retains the unsafe parent's reasons as
+  provenance, reports its impact as a parent-region upper bound, and is never
+  treated as permission to execute or replace the rejected parent graph.

@@ -163,16 +163,16 @@ def _region_for(ir: ExecutableIR, operations: list[str]) -> GraphRegion:
 
 
 def _operations_for(ir: ExecutableIR) -> list[str]:
-    return [
-        (
-            "aten::select"
-            if node.target == "operator.getitem"
-            else "aten::" + node.target.split(".", 2)[1]
-            if node.target.startswith("aten.")
-            else node.target
-        )
-        for node in ir.nodes
-    ]
+    operations = []
+    for node in ir.nodes:
+        if node.target == "operator.getitem":
+            operations.append("aten::select")
+        elif node.target.count(".") >= 2:
+            namespace, operation_name, _overload = node.target.split(".", 2)
+            operations.append(f"{namespace}::{operation_name}")
+        else:
+            operations.append(node.target)
+    return operations
 
 
 def test_derivation_isolates_allowlisted_component_with_explicit_boundary() -> None:
@@ -210,6 +210,32 @@ def test_derivation_isolates_allowlisted_component_with_explicit_boundary() -> N
     assert [item.name for item in derived.ir.inputs] == ["input_0"]
     assert derived.ir.inputs[0].meta.shape == (2, 4)
     assert derived.parent_cuda_time_us == 1000.0
+
+
+def test_derivation_preserves_custom_op_identity_but_excludes_it() -> None:
+    ir = _ir(
+        [_input("x", (2, 3))],
+        [
+            _node(
+                "attention",
+                "fastvideo._flash_attn_default_forward.default",
+                [_ref("x")],
+                meta=_meta((2, 3)),
+            ),
+            _node(
+                "negative",
+                "aten.neg.default",
+                [_ref("attention")],
+                meta=_meta((2, 3)),
+            ),
+        ],
+        [_ref("negative")],
+    )
+
+    derived = derive_safe_subregion(_region_for(ir, _operations_for(ir)))
+
+    assert [node.target for node in derived.ir.nodes] == ["aten.neg.default"]
+    assert derived.boundary_refs == ("attention",)
 
 
 def _to_fp32(node_id: str, source: str, shape: tuple[int, ...]) -> dict:
