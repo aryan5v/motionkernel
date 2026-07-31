@@ -31,7 +31,7 @@ _EXPORT_FIELDS = {
 
 # Capture-block format the loader understands. Independent of the export's
 # schema_version so a capture change does not invalidate timing-only readers.
-SUPPORTED_CAPTURE_SCHEMA_VERSION = 1
+SUPPORTED_CAPTURE_SCHEMA_VERSIONS = frozenset({1, 2})
 
 
 def _fail(source: object, location: str, message: str) -> DiscoveryError:
@@ -96,12 +96,12 @@ def profiler_export_to_report(
         version = capture.get("capture_schema_version")
         if isinstance(version, bool) or not isinstance(version, int):
             raise _fail(source, "capture.capture_schema_version", "must be an integer")
-        if version != SUPPORTED_CAPTURE_SCHEMA_VERSION:
+        if version not in SUPPORTED_CAPTURE_SCHEMA_VERSIONS:
             raise _fail(
                 source,
                 "capture.capture_schema_version",
                 f"unsupported version {version}; "
-                f"expected {SUPPORTED_CAPTURE_SCHEMA_VERSION}",
+                f"expected one of {sorted(SUPPORTED_CAPTURE_SCHEMA_VERSIONS)}",
             )
     else:
         # Captured payloads are versioned through the capture mapping; refuse

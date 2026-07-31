@@ -399,10 +399,19 @@ def test_profiler_export_rejects_capture_payload_without_version_block():
 
 def test_profiler_export_rejects_unknown_capture_schema_version():
     export = _capture_export()
-    export["capture"] = {"capture_schema_version": 2}
+    export["capture"] = {"capture_schema_version": 999}
 
     with pytest.raises(ValueError, match="capture_schema_version"):
         profiler_export_to_report(export)
+
+
+def test_profiler_export_accepts_operand_aware_capture_schema():
+    export = _capture_export()
+    export["capture"]["capture_schema_version"] = 2
+
+    report = profiler_export_to_report(export)
+
+    assert len(report.regions) == 1
 
 
 def test_profiler_export_rejects_tampered_region_fingerprint():
