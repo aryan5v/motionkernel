@@ -13,6 +13,7 @@ import autokernel.verification.results as results
 
 def test_result_envelope_is_versioned():
     payload = results.result_envelope("affine", forward={"status": "PASS"})
+    assert results.RESULT_SCHEMA_VERSION == 2
     assert payload["schema_version"] == results.RESULT_SCHEMA_VERSION
     assert payload["operation"] == "affine"
     assert payload["created_at"].endswith("+00:00")

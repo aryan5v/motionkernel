@@ -279,6 +279,7 @@ def test_extract_synthesizes_a_target_from_a_spec_alone():
         "--shape-corpus-only",
         "--check-backward",
         "--check-compile",
+        "--baseline",
         "--result-json",
     ],
 )

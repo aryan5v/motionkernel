@@ -830,16 +830,56 @@ def _do_bench(fn: Callable, warmup: int = 25, rep: int = 100) -> float:
     return times[len(times) // 2]  # median
 
 
+def _reference_benchmark_callable(
+    ref_fn: Callable,
+    inputs: Mapping[str, Any],
+    *,
+    baseline: str,
+    device: str,
+) -> Callable[[], Any]:
+    """Prepare the timed reference without including compilation in timing."""
+    def eager_reference() -> Any:
+        return ref_fn(inputs)
+
+    if baseline == "eager":
+        return eager_reference
+    if baseline != "compile":
+        raise ValueError("baseline must be 'eager' or 'compile'")
+    compile_fn = getattr(torch, "compile", None)
+    if not callable(compile_fn):
+        raise RuntimeError(
+            "--baseline compile requested, but torch.compile is unavailable"
+        )
+    try:
+        compiled_reference = compile_fn(eager_reference, fullgraph=True)
+        # Compile and warm the graph outside the timed region.
+        compiled_reference()
+        compiled_reference()
+        if device.startswith("cuda") and torch.cuda.is_available():
+            torch.cuda.synchronize()
+    except Exception as exc:
+        raise RuntimeError(
+            f"--baseline compile failed; refusing to fall back to eager: {exc}"
+        ) from exc
+    return compiled_reference
+
+
 def run_performance(kernel_fn: Callable, spec: KernelSpec, gpu: GPUSpec,
                     sizes_filter: str = "all",
                     corpus_cases: Optional[Sequence] = None,
-                    corpus_only: bool = False) -> dict:
+                    corpus_only: bool = False,
+                    baseline: str = "eager") -> dict:
     """Run performance benchmarks. Returns dict with metrics.
 
     ``corpus_cases`` appends production shapes (each benchmarked once; their
     weights feed aggregate reporting, not repetition). ``corpus_only``
     benchmarks only those shapes.
+
+    ``baseline`` selects the timed PyTorch reference path: ``eager`` (default)
+    or ``compile`` (``torch.compile``). Correctness checks always use eager.
     """
+    if baseline not in {"eager", "compile"}:
+        raise ValueError("baseline must be 'eager' or 'compile'")
     device = BENCH_DEVICE
     gen_fn = spec.input_generator
     ref_fn = _spec_reference(spec)
@@ -907,9 +947,16 @@ def run_performance(kernel_fn: Callable, spec: KernelSpec, gpu: GPUSpec,
             with _Timeout(30):
                 kernel_ms = _do_bench(lambda: kernel_fn(**inputs), warmup=25, rep=100)
 
-            # Benchmark PyTorch reference
+            # Correctness already ran against eager; this only affects timing.
+            ref_bench = _reference_benchmark_callable(
+                ref_fn,
+                inputs,
+                baseline=baseline,
+                device=device,
+            )
+
             with _Timeout(30):
-                ref_ms = _do_bench(lambda: ref_fn(inputs), warmup=25, rep=100)
+                ref_ms = _do_bench(ref_bench, warmup=25, rep=100)
 
             # Compute metrics
             kernel_us = kernel_ms * 1000.0
@@ -970,6 +1017,10 @@ def run_performance(kernel_fn: Callable, spec: KernelSpec, gpu: GPUSpec,
         except Exception as e:
             print(f"    ERROR: {label} -> {type(e).__name__}: {e}")
             traceback.print_exc()
+            if baseline == "compile":
+                # A compile baseline must never degrade into an eager or empty
+                # comparison that could make a candidate look better.
+                raise
         finally:
             torch.cuda.empty_cache()
 
@@ -1005,6 +1056,7 @@ def run_performance(kernel_fn: Callable, spec: KernelSpec, gpu: GPUSpec,
         "primary": primary_result,
         "all": all_results,
         "corpus": corpus_summary,
+        "baseline_mode": baseline,
     }
 
 
@@ -1099,6 +1151,15 @@ def main():
     parser.add_argument("--check-compile", action="store_true",
                         help="Verify torch.compile parity using the spec's compile settings "
                              "(correctness-only; compilation is never timed)")
+    parser.add_argument(
+        "--baseline",
+        choices=("eager", "compile"),
+        default="eager",
+        help=(
+            "Timed PyTorch reference baseline: eager (default) or compile. "
+            "Correctness always uses the eager reference."
+        ),
+    )
     parser.add_argument("--result-json", type=str,
                         default=os.path.join(_SCRIPT_DIR, "workspace", "bench_result.json"),
                         metavar="PATH",
@@ -1298,6 +1359,7 @@ def main():
     print(f"\n=== PERFORMANCE ({_perf_primary_label}: {_size_params}, dtype={_perf_dtype}) ===")
 
     perf_results = {"primary": None, "all": []}
+    performance_error = None
     peak_vram_mb = 0.0
     try:
         sizes_filter = args.sizes
@@ -1307,9 +1369,11 @@ def main():
         perf_results = run_performance(
             kernel_fn, spec, gpu, sizes_filter=sizes_filter,
             corpus_cases=corpus_cases, corpus_only=args.shape_corpus_only,
+            baseline=args.baseline,
         )
         peak_vram_mb = torch.cuda.max_memory_allocated() / 1024 / 1024
     except Exception as e:
+        performance_error = f"{type(e).__name__}: {e}"
         print(f"\nFATAL: Performance benchmarking crashed: {type(e).__name__}: {e}")
         traceback.print_exc()
 
@@ -1398,6 +1462,7 @@ def main():
         }
     result_payload = result_envelope(
         kernel_type,
+        baseline_mode=args.baseline,
         environment=collect_environment_metadata(BENCH_DEVICE),
         request={
             "spec": args.spec,
@@ -1406,6 +1471,7 @@ def main():
             "profile": args.profile,
             "check_backward": backward_requested,
             "check_compile": compile_requested,
+            "baseline_mode": args.baseline,
         },
         gpu=asdict(gpu),
         shape_corpus=corpus_identity,
@@ -1415,6 +1481,8 @@ def main():
         performance={
             **perf_results,
             "peak_vram_mb": peak_vram_mb,
+            "baseline_mode": args.baseline,
+            "error": performance_error,
         },
         bench_time_seconds=t_elapsed,
     )
@@ -1438,6 +1506,13 @@ def main():
 
     if t_elapsed > 90:
         print(f"WARNING: bench.py took {t_elapsed:.1f}s (budget: 90s)")
+
+    if args.baseline == "compile" and performance_error is not None:
+        print(
+            "BASELINE: FAIL (compile requested; eager fallback is forbidden)",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

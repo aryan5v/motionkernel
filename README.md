@@ -338,6 +338,49 @@ forward leaf errors, optional gradient and compile results, shape-corpus identit
 environment metadata and performance results. Stable console verdicts are
 `FORWARD_CORRECTNESS`, `BACKWARD_CORRECTNESS` and `COMPILE_CORRECTNESS`.
 
+Use `--baseline eager|compile` to select the timed PyTorch comparison (default:
+`eager`). Compile mode uses `torch.compile(..., fullgraph=True)`, performs its
+compile/warmup before timing, and records `baseline_mode` in result schema 2.
+Correctness always compares with eager PyTorch. If compilation is unavailable or
+fails, the benchmark fails instead of silently substituting the eager baseline.
+
+## Resumable overnight optimization
+
+`optimize.py` is the V1 control plane for a model optimization run:
+
+```bash
+python optimize.py \
+  --fastvideo-checkout /path/to/FastVideo \
+  --model Wan-AI/Wan2.1-T2V-1.3B-Diffusers \
+  --workload workloads/wan_t2v_1.3b_480p.yaml \
+  --baseline compile \
+  --budget-hours 10 \
+  --per-candidate-budget-seconds 3600 \
+  --stage-commands stage_commands.json \
+  --output workspace/wan-overnight
+```
+
+The durable pipeline is `baseline → profile → discover → specgen → search →
+isolated_validate → package → end_to_end_validate`. Every stage runs in an
+isolated subprocess and exchanges versioned JSON through the run directory.
+Re-running the same command resumes completed stages. A changed model,
+workload, baseline, adapter command, or validation policy is rejected on
+resume; use a new output directory or `--no-resume` for a fresh campaign.
+
+GPU adapters can be supplied with `--stage-commands commands.json`. The file
+maps stage names to argv arrays and supports `{stage}`, `{run_dir}`,
+`{repo_root}`, `{fastvideo_checkout}`, `{workload}`, `{model}`, `{baseline}`,
+and `{artifact_dir}` placeholders. The control plane writes `state.json`,
+per-stage inputs/results/logs, command receipts, `receipt.json`, and
+`morning_report.md`. A kernel is promoted only when the final end-to-end run
+meets the configured threshold; an isolated benchmark can never promote it.
+The V1 control-plane branch intentionally fails closed when a real stage has no
+adapter; the GPU integration supplies these commands rather than running work
+on the controller process.
+
+For a CPU-only contract smoke test, set `MOTIONKERNEL_SIMULATE=1` and optionally
+`MOTIONKERNEL_SIMULATE_OUTCOME=promoted|no_worthwhile_candidate|fail_at:STAGE`.
+
 ## Example Models
 
 Self-contained model definitions inherited by MotionKernel require no
@@ -421,6 +464,7 @@ motionkernel/
   program.md            agent instructions -- the "research org code"
 
   bench.py              fixed benchmark + 5-stage correctness harness
+  optimize.py           resumable overnight optimization control plane
   reference.py          PyTorch reference implementations (ground truth)
   prepare.py            one-time setup: test data, baselines
 

@@ -2,6 +2,13 @@
 
 ## Unreleased (downstream)
 
+- Added the resumable `optimize.py` V1 control plane with isolated JSON stage
+  contracts, wall-clock and per-candidate budgets, durable receipts/morning
+  reports, and end-to-end-only promotion gates.
+- Added an honest `bench.py --baseline compile` performance baseline, recorded
+  as `baseline_mode` in benchmark result schema 2, with no eager fallback when
+  compilation is unavailable or fails.
+
 ### Universal workload and discovery foundation
 
 - Added versioned, metadata-only FastVideo workload manifests under

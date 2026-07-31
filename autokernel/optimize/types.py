@@ -1,0 +1,123 @@
+"""Types and constants for the top-level MotionKernel optimize control plane."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Mapping, Sequence
+
+# Ordered campaign stages (linear control plane).
+PIPELINE_STAGES: tuple[str, ...] = (
+    "baseline",
+    "profile",
+    "discover",
+    "specgen",
+    "search",
+    "isolated_validate",
+    "package",
+    "end_to_end_validate",
+)
+
+TERMINAL_STATUSES: frozenset[str] = frozenset(
+    {
+        "promoted",
+        "no_worthwhile_candidate",
+        "failed",
+        "budget_exhausted",
+    }
+)
+
+STAGE_RESULT_SCHEMA_VERSION = 1
+CAMPAIGN_STATE_SCHEMA_VERSION = 1
+RECEIPT_SCHEMA_VERSION = 1
+
+CANDIDATE_STAGE_STATUS: dict[str, str] = {
+    "discover": "discovered",
+    "specgen": "specified",
+    "search": "searched",
+    "isolated_validate": "isolated_validated",
+    "package": "packaged",
+    "end_to_end_validate": "end_to_end_validated",
+}
+
+# Default minimum end-to-end speedup required for promotion (1%).
+DEFAULT_MIN_E2E_SPEEDUP = 1.01
+
+
+@dataclass(frozen=True)
+class OptimizeConfig:
+    """User-facing optimize invocation."""
+
+    fastvideo_checkout: Path
+    model: str
+    workload: Path
+    output: Path
+    budget_hours: float = 10.0
+    resume: bool = True
+    baseline: str = "eager"  # eager | compile
+    min_e2e_speedup: float = DEFAULT_MIN_E2E_SPEEDUP
+    # Optional absolute overrides for tests / fake FastVideo + bench.
+    stage_commands: Mapping[str, Sequence[str]] | None = None
+    # Opaque artifact directory written by the packager stage (Task 2 contract).
+    artifact_dir_name: str = "artifacts"
+    per_candidate_budget_seconds: float | None = None
+    repo_root: Path | None = None
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "fastvideo_checkout": str(self.fastvideo_checkout),
+            "model": self.model,
+            "workload": str(self.workload),
+            "output": str(self.output),
+            "budget_hours": self.budget_hours,
+            "resume": self.resume,
+            "baseline": self.baseline,
+            "min_e2e_speedup": self.min_e2e_speedup,
+            "stage_commands": (
+                {k: list(v) for k, v in self.stage_commands.items()}
+                if self.stage_commands
+                else None
+            ),
+            "artifact_dir_name": self.artifact_dir_name,
+            "per_candidate_budget_seconds": self.per_candidate_budget_seconds,
+            "repo_root": str(self.repo_root) if self.repo_root else None,
+        }
+
+
+@dataclass
+class StageRecord:
+    """Durable record for one completed or failed stage."""
+
+    name: str
+    status: str  # ok | failed | skipped
+    started_at: str | None = None
+    finished_at: str | None = None
+    exit_code: int | None = None
+    result_path: str | None = None
+    message: str = ""
+    metrics: dict[str, Any] = field(default_factory=dict)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "status": self.status,
+            "started_at": self.started_at,
+            "finished_at": self.finished_at,
+            "exit_code": self.exit_code,
+            "result_path": self.result_path,
+            "message": self.message,
+            "metrics": dict(self.metrics),
+        }
+
+    @classmethod
+    def from_dict(cls, raw: Mapping[str, Any]) -> "StageRecord":
+        return cls(
+            name=str(raw["name"]),
+            status=str(raw["status"]),
+            started_at=raw.get("started_at"),
+            finished_at=raw.get("finished_at"),
+            exit_code=raw.get("exit_code"),
+            result_path=raw.get("result_path"),
+            message=str(raw.get("message") or ""),
+            metrics=dict(raw.get("metrics") or {}),
+        )

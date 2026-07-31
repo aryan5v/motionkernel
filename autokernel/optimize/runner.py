@@ -1,0 +1,301 @@
+"""Top-level resumable optimize campaign runner."""
+
+from __future__ import annotations
+
+import math
+import time
+from pathlib import Path
+from typing import Any
+
+from .report import write_morning_report
+from .stages import run_stage
+from .state import (
+    OptimizeError,
+    build_receipt,
+    ensure_budget,
+    initial_state,
+    load_state,
+    read_json,
+    run_dir_layout,
+    save_state,
+    stage_is_complete,
+    utc_now,
+    write_json_atomic,
+)
+from .types import PIPELINE_STAGES, OptimizeConfig
+
+
+_RESUME_IDENTITY_FIELDS = (
+    "fastvideo_checkout",
+    "model",
+    "workload",
+    "budget_hours",
+    "baseline",
+    "min_e2e_speedup",
+    "stage_commands",
+    "artifact_dir_name",
+    "per_candidate_budget_seconds",
+    "repo_root",
+)
+
+
+def _validate_config(config: OptimizeConfig) -> None:
+    if config.baseline not in {"eager", "compile"}:
+        raise OptimizeError("baseline must be 'eager' or 'compile'")
+    if not math.isfinite(config.budget_hours) or config.budget_hours <= 0:
+        raise OptimizeError("budget_hours must be finite and positive")
+    if not math.isfinite(config.min_e2e_speedup) or config.min_e2e_speedup <= 0:
+        raise OptimizeError("min_e2e_speedup must be finite and positive")
+    if (
+        config.per_candidate_budget_seconds is not None
+        and (
+            not math.isfinite(config.per_candidate_budget_seconds)
+            or config.per_candidate_budget_seconds <= 0
+        )
+    ):
+        raise OptimizeError(
+            "per_candidate_budget_seconds must be finite and positive"
+        )
+    if not config.model.strip():
+        raise OptimizeError("model must not be empty")
+    if not config.fastvideo_checkout.is_dir():
+        raise OptimizeError(
+            f"FastVideo checkout not found: {config.fastvideo_checkout}"
+        )
+    if not config.workload.is_file():
+        raise OptimizeError(f"workload not found: {config.workload}")
+    if (
+        not config.artifact_dir_name
+        or config.artifact_dir_name in {".", ".."}
+        or Path(config.artifact_dir_name).name != config.artifact_dir_name
+    ):
+        raise OptimizeError("artifact_dir_name must be one directory name")
+    if config.stage_commands:
+        unknown = sorted(set(config.stage_commands) - set(PIPELINE_STAGES))
+        if unknown:
+            raise OptimizeError(f"unknown stage command(s): {', '.join(unknown)}")
+        for stage, command in config.stage_commands.items():
+            if not command or any(not str(part) for part in command):
+                raise OptimizeError(f"stage command for {stage!r} must not be empty")
+
+
+def _validate_resume_config(stored: dict[str, Any], config: OptimizeConfig) -> None:
+    requested = config.as_dict()
+    changed = [
+        name
+        for name in _RESUME_IDENTITY_FIELDS
+        if stored.get(name) != requested.get(name)
+    ]
+    if changed:
+        raise OptimizeError(
+            "cannot resume with changed campaign configuration: "
+            + ", ".join(changed)
+            + "; use a new --output or --no-resume"
+        )
+
+
+def _finite_metric(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _decide_terminal(
+    state: dict[str, Any],
+    stage_results: dict[str, dict[str, Any]],
+    *,
+    min_e2e_speedup: float,
+) -> tuple[str, str]:
+    """Return (terminal, message). Never promote from isolated speedup alone."""
+    e2e = stage_results.get("end_to_end_validate") or {}
+    discover = stage_results.get("discover") or {}
+    isolated = stage_results.get("isolated_validate") or {}
+
+    # Explicit stage recommendations win when present.
+    for stage_name in (
+        "end_to_end_validate",
+        "discover",
+        "specgen",
+        "search",
+        "package",
+    ):
+        rec = (stage_results.get(stage_name) or {}).get("recommendation")
+        if rec in {"promoted", "no_worthwhile_candidate", "failed"}:
+            if rec == "promoted":
+                # Hard gate: e2e metrics required.
+                metrics = e2e.get("metrics") or {}
+                raw_speedup = metrics.get("end_to_end_speedup")
+                speedup = _finite_metric(raw_speedup)
+                classification = metrics.get("classification")
+                if speedup is None or speedup < min_e2e_speedup:
+                    return (
+                        "no_worthwhile_candidate",
+                        "promotion blocked: end-to-end speedup below threshold "
+                        f"(isolated speedup="
+                        f"{(isolated.get('metrics') or {}).get('isolated_speedup')!r} "
+                        "is not sufficient)",
+                    )
+                if classification != "improved":
+                    return (
+                        "no_worthwhile_candidate",
+                        f"promotion blocked: e2e classification={classification!r}",
+                    )
+                return (
+                    "promoted",
+                    f"promoted with end-to-end speedup={speedup}",
+                )
+            if rec == "no_worthwhile_candidate":
+                return (
+                    "no_worthwhile_candidate",
+                    str(
+                        (stage_results.get(stage_name) or {}).get("message")
+                        or "no worthwhile candidate"
+                    ),
+                )
+            return ("failed", str((stage_results.get(stage_name) or {}).get("message") or "failed"))
+
+    candidates = state.get("candidates") or discover.get("candidates") or []
+    if not candidates:
+        return (
+            "no_worthwhile_candidate",
+            "discovery produced no search-worthy candidates",
+        )
+
+    metrics = e2e.get("metrics") or {}
+    speedup = _finite_metric(metrics.get("end_to_end_speedup"))
+    classification = metrics.get("classification")
+    if (
+        speedup is not None
+        and speedup >= min_e2e_speedup
+        and classification == "improved"
+    ):
+        return ("promoted", f"promoted with end-to-end speedup={speedup}")
+    if classification in {"neutral", "regressed"} or (
+        speedup is not None and speedup < min_e2e_speedup
+    ):
+        return (
+            "no_worthwhile_candidate",
+            "end-to-end result does not meet promotion threshold "
+            f"(isolated speedup="
+            f"{(isolated.get('metrics') or {}).get('isolated_speedup')!r} ignored)",
+        )
+    return ("failed", "campaign finished without a clear promotion decision")
+
+
+def run_optimize(config: OptimizeConfig) -> dict[str, Any]:
+    """Execute or resume the full optimize pipeline."""
+    _validate_config(config)
+
+    layout = run_dir_layout(config.output)
+    layout["root"].mkdir(parents=True, exist_ok=True)
+    for key in ("stages", "logs", "candidates", "artifacts", "commands"):
+        layout[key].mkdir(parents=True, exist_ok=True)
+
+    if config.resume and layout["state"].is_file():
+        if not layout["config"].is_file():
+            raise OptimizeError(
+                f"resume state exists but config is missing: {layout['config']}"
+            )
+        stored_config = read_json(layout["config"])
+        if not isinstance(stored_config, dict):
+            raise OptimizeError("stored campaign config must be a JSON object")
+        _validate_resume_config(stored_config, config)
+        state = load_state(layout["state"])
+        if state.get("status") in {"promoted", "no_worthwhile_candidate", "failed", "budget_exhausted"}:
+            # Already terminal — rewrite morning report and return receipt.
+            if layout["receipt"].is_file():
+                receipt = read_json(layout["receipt"])
+            else:
+                receipt = build_receipt(
+                    state,
+                    config,
+                    terminal=str(state.get("terminal") or state.get("status")),
+                    message="campaign already terminal on resume",
+                )
+                write_json_atomic(layout["receipt"], receipt)
+            write_morning_report(layout["morning_report"], receipt=receipt)
+            return receipt
+    else:
+        # A deliberately fresh run must not expose an old terminal receipt
+        # while new stages are still running.
+        layout["receipt"].unlink(missing_ok=True)
+        layout["morning_report"].unlink(missing_ok=True)
+        write_json_atomic(layout["config"], config.as_dict())
+        state = initial_state(config)
+        # Wall-clock deadline for the campaign budget.
+        state["budget_deadline_epoch"] = time.time() + config.budget_hours * 3600.0
+        save_state(layout["state"], state)
+
+    # Ensure deadline exists for resumed runs that predate the field.
+    if state.get("budget_deadline_epoch") is None:
+        state["budget_deadline_epoch"] = time.time() + config.budget_hours * 3600.0
+        save_state(layout["state"], state)
+
+    stage_results: dict[str, dict[str, Any]] = {}
+    # Reload completed stage results for decision logic.
+    for stage in PIPELINE_STAGES:
+        result_path = layout["stages"] / stage / "result.json"
+        if stage_is_complete(state, stage) and result_path.is_file():
+            stage_results[stage] = read_json(result_path)
+
+    try:
+        for stage in PIPELINE_STAGES:
+            ensure_budget(state)
+            if config.resume and stage_is_complete(state, stage):
+                continue
+            payload = run_stage(
+                stage,
+                config=config,
+                state=state,
+                state_path=layout["state"],
+            )
+            stage_results[stage] = payload
+            # Early exit if discover declares nothing worth searching.
+            if stage == "discover" and payload.get("recommendation") == "no_worthwhile_candidate":
+                break
+            if stage == "specgen" and payload.get("recommendation") == "no_worthwhile_candidate":
+                break
+    except OptimizeError as exc:
+        if "budget exhausted" in str(exc).lower():
+            terminal = "budget_exhausted"
+        else:
+            terminal = "failed"
+        state["status"] = terminal
+        state["terminal"] = terminal
+        save_state(layout["state"], state)
+        receipt = build_receipt(state, config, terminal=terminal, message=str(exc))
+        write_json_atomic(layout["receipt"], receipt)
+        write_morning_report(layout["morning_report"], receipt=receipt)
+        return receipt
+
+    terminal, message = _decide_terminal(
+        state,
+        stage_results,
+        min_e2e_speedup=config.min_e2e_speedup,
+    )
+    state["status"] = terminal
+    state["terminal"] = terminal
+    if terminal in {"promoted", "no_worthwhile_candidate"}:
+        final_candidate_status = (
+            "promoted" if terminal == "promoted" else "not_promoted"
+        )
+        state["candidates"] = [
+            {**candidate, "status": final_candidate_status}
+            if isinstance(candidate, dict)
+            else candidate
+            for candidate in (state.get("candidates") or [])
+        ]
+    state.setdefault("messages", []).append({"at": utc_now(), "text": message})
+    save_state(layout["state"], state)
+    receipt = build_receipt(state, config, terminal=terminal, message=message)
+    write_json_atomic(layout["receipt"], receipt)
+    write_morning_report(
+        layout["morning_report"],
+        receipt=receipt,
+        stage_summaries={
+            name: payload.get("message") for name, payload in stage_results.items()
+        },
+    )
+    return receipt

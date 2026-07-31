@@ -172,6 +172,47 @@ def test_performance_reports_every_requested_size(cpu_device, stub_timer):
     assert perf["primary"]["label"] == "large"
 
 
+def test_compile_performance_baseline_is_fullgraph_and_warmed_outside_timing(
+    cpu_device, stub_timer, monkeypatch: pytest.MonkeyPatch
+):
+    compile_options = []
+    calls = []
+
+    def fake_compile(fn, **options):
+        compile_options.append(options)
+
+        def compiled():
+            calls.append("compiled")
+            return fn()
+
+        return compiled
+
+    monkeypatch.setattr(bench.torch, "compile", fake_compile)
+    gpu = bench.GPUSpec(
+        name="cpu-test", peak_tflops_fp16=100.0, peak_bandwidth_gb_s=1000.0
+    )
+    perf = bench.run_performance(
+        _good_kernel, _spec(), gpu, sizes_filter="large", baseline="compile"
+    )
+
+    assert compile_options == [{"fullgraph": True}]
+    assert len(calls) == 3  # two untimed warmups plus one fake timed call
+    assert perf["baseline_mode"] == "compile"
+
+
+def test_compile_performance_baseline_never_falls_back_to_eager(
+    cpu_device, stub_timer, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.delattr(bench.torch, "compile", raising=False)
+    gpu = bench.GPUSpec(
+        name="cpu-test", peak_tflops_fp16=100.0, peak_bandwidth_gb_s=1000.0
+    )
+    with pytest.raises(RuntimeError, match="torch.compile is unavailable"):
+        bench.run_performance(
+            _good_kernel, _spec(), gpu, sizes_filter="large", baseline="compile"
+        )
+
+
 # ---------------------------------------------------------------------------
 # Structured outputs
 # ---------------------------------------------------------------------------
@@ -334,4 +375,3 @@ def test_performance_corpus_only_skips_builtin_sizes(cpu_device, stub_timer):
     )
     labels = [entry["label"] for entry in perf["all"]]
     assert labels == ["prod-a", "prod-b"]
-
