@@ -33,6 +33,29 @@
 - Added optional validated `KernelSpec.graph_fingerprint` provenance and CPU
   zero-tolerance parity coverage against all three handwritten Wan references
 
+### Portable artifact bundles
+
+- Added the versioned artifact bundle contract under `autokernel/artifact/`: a
+  strictly validated, metadata-only manifest recording operation identity and
+  graph fingerprint, input/output tensor signatures, candidate entry point and
+  per-file SHA-256 digests, model/revision, GPU architecture and
+  PyTorch/CUDA/Triton compatibility, inference/training and distributed mode,
+  isolated benchmark evidence, full-generation validation evidence, and the
+  promotion decision with its source campaign
+- Added the packager and validator: every payload file is hashed and declared
+  at package time, the finished bundle is re-verified from disk the way a
+  consumer will verify it, and undeclared files, missing files, size changes
+  and hash changes are all hard rejections
+- Added compatibility matching keyed on graph fingerprint and tensor signature
+  rather than model-specific switches, with stable rejection reason codes,
+  `"*"` wildcards, bounded version ranges that fail closed on unparseable
+  runtime versions, and deterministic selection of the fastest qualifying
+  bundle
+- Added trusted loading that resolves bundles inside an explicit trusted root,
+  re-verifies hashes immediately before import, and imports under a private
+  module namespace instead of `sys.path`
+- Documented the contract in `docs/ARTIFACT_BUNDLE.md`
+
 ### Model optimization campaigns
 
 - Added a versioned, metadata-only campaign contract with strict validation,
