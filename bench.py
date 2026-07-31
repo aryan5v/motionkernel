@@ -335,6 +335,27 @@ def resolve_operation_name(
     return spec_name or kernel_arg or declared_type
 
 
+def load_candidate_module(directory: str | None = None):
+    """Load the candidate ``kernel.py`` from an explicit directory.
+
+    ``bench.py`` lives beside its own historical kernel.py. Importing the bare
+    module name can therefore select the repository copy when this script is
+    invoked by absolute path from a generated-spec directory, depending on
+    Python's initial ``sys.path`` ordering. Loading the exact file also avoids
+    reusing an unrelated cached ``kernel`` module in long-lived test processes.
+    """
+    root = os.path.abspath(directory or os.getcwd())
+    candidate_path = os.path.join(root, "kernel.py")
+    spec = importlib.util.spec_from_file_location(
+        "_autokernel_benchmark_candidate", candidate_path
+    )
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load candidate module {candidate_path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def _get_spec_or_exit(registry: KernelRegistry, kernel_type: str) -> KernelSpec:
     """Fetch a spec from the registry, preserving the CLI failure contract."""
     try:
@@ -1216,15 +1237,7 @@ def main():
         corpus_cases = _load_validated_corpus(args, spec)
 
     try:
-        # Add cwd to path so 'import kernel' works
-        if os.getcwd() not in sys.path:
-            sys.path.insert(0, os.getcwd())
-        # Also add the script's directory
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        if script_dir not in sys.path:
-            sys.path.insert(0, script_dir)
-
-        kernel_module = importlib.import_module("kernel")
+        kernel_module = load_candidate_module()
         kernel_fn = kernel_module.kernel_fn
 
         declared_type = getattr(kernel_module, "KERNEL_TYPE", None)
