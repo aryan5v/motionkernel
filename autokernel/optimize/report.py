@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
-from .state import write_text_atomic
+from autokernel._io import write_text_atomic
 
 
 def write_morning_report(
@@ -31,10 +32,14 @@ def write_morning_report(
         "## Policy",
         "",
         "- Isolated operator speedup alone **never** promotes a kernel.",
-        "- Promotion requires end-to-end generation improvement at or above "
-        "the configured threshold with acceptable parity.",
-        "- A neutral or low-impact outcome is reported as "
-        "`no_worthwhile_candidate`, not success.",
+        (
+            "- Promotion requires end-to-end generation improvement at or above "
+            "the configured threshold with acceptable parity."
+        ),
+        (
+            "- A neutral or low-impact outcome is reported as "
+            "`no_worthwhile_candidate`, not success."
+        ),
         "",
         "## Completed stages",
         "",
@@ -80,10 +85,10 @@ def write_morning_report(
             "## Artifacts",
             "",
             f"Run directory: `{receipt.get('output')}`",
-            f"Receipt: `receipt.json`",
-            f"State: `state.json`",
+            "Receipt: `receipt.json`",
+            "State: `state.json`",
             "",
-            f"## Conclusion",
+            "## Conclusion",
             "",
             f"{receipt.get('message') or terminal}",
             "",

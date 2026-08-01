@@ -106,6 +106,7 @@ def _decide_terminal(
         "discover",
         "specgen",
         "search",
+        "isolated_validate",
         "package",
     ):
         rec = (stage_results.get(stage_name) or {}).get("recommendation")

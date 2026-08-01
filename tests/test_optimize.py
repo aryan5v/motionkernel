@@ -8,11 +8,15 @@ from pathlib import Path
 
 import pytest
 
-from conftest import make_fastvideo_checkout, make_workload
-
-from autokernel.optimize import OptimizeConfig, OptimizeError, PIPELINE_STAGES, run_optimize
+from autokernel.optimize import (
+    PIPELINE_STAGES,
+    OptimizeConfig,
+    OptimizeError,
+    run_optimize,
+)
 from autokernel.optimize.runner import _decide_terminal
 from autokernel.optimize.stages import _load_stage_result
+from conftest import make_fastvideo_checkout, make_workload
 
 
 def _config(tmp_path: Path, repo_root: Path, **overrides) -> OptimizeConfig:
@@ -86,6 +90,23 @@ def test_isolated_speedup_cannot_promote_without_e2e_improvement():
     )
     assert terminal == "no_worthwhile_candidate"
     assert "isolated speedup=20.0 is not sufficient" in message
+
+
+def test_isolated_no_worthwhile_candidate_is_not_reported_as_failure():
+    terminal, message = _decide_terminal(
+        {"candidates": [{"fingerprint": "candidate"}]},
+        {
+            "isolated_validate": {
+                "recommendation": "no_worthwhile_candidate",
+                "message": "all measured candidates were slower",
+                "metrics": {"isolated_speedup": 0.9},
+            }
+        },
+        min_e2e_speedup=1.01,
+    )
+
+    assert terminal == "no_worthwhile_candidate"
+    assert message == "all measured candidates were slower"
 
 
 @pytest.mark.parametrize("speedup", [None, "bad", float("nan"), float("inf")])

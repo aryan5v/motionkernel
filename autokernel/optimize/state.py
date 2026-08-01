@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
-import tempfile
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
+
+from autokernel._io import write_json_atomic
 
 from .types import (
     CAMPAIGN_STATE_SCHEMA_VERSION,
@@ -23,37 +25,6 @@ class OptimizeError(ValueError):
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
-
-
-def write_json_atomic(path: Path, payload: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(
-        mode="w",
-        encoding="utf-8",
-        dir=path.parent,
-        prefix=f".{path.name}.",
-        suffix=".tmp",
-        delete=False,
-    ) as handle:
-        json.dump(payload, handle, indent=2)
-        handle.write("\n")
-        temporary = Path(handle.name)
-    temporary.replace(path)
-
-
-def write_text_atomic(path: Path, value: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(
-        mode="w",
-        encoding="utf-8",
-        dir=path.parent,
-        prefix=f".{path.name}.",
-        suffix=".tmp",
-        delete=False,
-    ) as handle:
-        handle.write(value)
-        temporary = Path(handle.name)
-    temporary.replace(path)
 
 
 def read_json(path: Path) -> Any:
