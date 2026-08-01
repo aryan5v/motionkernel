@@ -225,6 +225,8 @@ def test_ltx_gelu_overload_is_allowlisted_and_matches_eager(torch_mod) -> None:
     expected = torch_mod.nn.functional.gelu(x, approximate="tanh")
 
     torch_mod.testing.assert_close(actual, expected)
+    derived = derive_safe_subregion(_region_for(ir, _operations_for(ir)))
+    assert [node.target for node in derived.ir.nodes] == ["aten.gelu.default"]
 
 
 def _region_for(ir: ExecutableIR, operations: list[str]) -> GraphRegion:
