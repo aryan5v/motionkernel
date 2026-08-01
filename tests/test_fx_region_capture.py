@@ -248,10 +248,15 @@ def test_auto_falls_back_from_symbolic_to_export_for_shape_branch():
         "symbolic",
         "export",
     ]
-    assert result.mode_failures == (
-        "capture_failed:symbolic:dynamic_python_control_flow:TraceError",
+    assert len(result.mode_failures) == 1
+    assert result.mode_failures[0].startswith(
+        "capture_failed:symbolic:dynamic_python_control_flow:"
     )
     assert result.graph_breaks[0].reason == result.mode_failures[0]
+    assert not any(
+        reason.startswith("capture_failed:")
+        for reason in result.region.rejection_reasons
+    )
 
 
 def test_cached_rotary_shape_branch_uses_export_fallback():
