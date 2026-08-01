@@ -323,6 +323,47 @@ def test_correlate_discovery_report_integration():
     assert correlated_report.environment == fx_report.environment
 
 
+def test_correlate_discovery_report_derives_cuda_total_from_profiler():
+    profiler_export_rows = [
+        {
+            "name": "aten::mm",
+            "calls": 1,
+            "cuda_time_us": 400.0,
+            "self_cuda_time_us": 400.0,
+        },
+        {
+            "name": "aten::unmatched",
+            "calls": 1,
+            "cuda_time_us": 600.0,
+            "self_cuda_time_us": 600.0,
+        },
+    ]
+    fx_report = DiscoveryReport.from_dict(
+        {
+            "schema_version": 1,
+            "producer": {"name": "fastvideo", "version": "test"},
+            "workload": {"workload_id": "test", "model_id": "test"},
+            "environment": {"hardware_profile_id": "cpu"},
+            "total_cuda_time_us": 0.0,
+            "operators": [],
+            "regions": [
+                GraphRegion.build(
+                    name="attention",
+                    operations=["aten::mm"],
+                    inputs=[_tensor("x")],
+                ).as_dict(),
+            ],
+        }
+    )
+
+    correlated = correlate_discovery_report(profiler_export_rows, fx_report)
+
+    # The denominator uses exclusive device time so nested inclusive ranges
+    # are not counted repeatedly.
+    assert correlated.total_cuda_time_us == 1000.0
+    assert correlated.regions[0].attributes["e2e_share_pct"] == 40.0
+
+
 def test_correlate_discovery_report_keeps_unmatched_as_diagnostic():
     profiler_export_rows = [
         {
