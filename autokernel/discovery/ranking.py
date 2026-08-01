@@ -116,6 +116,35 @@ def measured_e2e_improvement(share: float, measured_speedup: float) -> float:
     return max(0.0, share * (1.0 - 1.0 / measured_speedup))
 
 
+def measured_e2e_improvement_from_latency(
+    *,
+    baseline_us: float,
+    candidate_us: float,
+    calls_per_generation: float,
+    total_generation_us: float,
+) -> float:
+    """End-to-end gain from an absolute per-call saving and a real call count.
+
+    Prefer this over :func:`measured_e2e_improvement` for a
+    ``derived_subregion`` candidate. There, ``share_of_e2e`` describes the
+    *parent* region while the benchmark measures only the selected subregion,
+    so multiplying the two attributes the subregion's speedup to the whole
+    parent. For the repaired r4 transformer candidate -- 22 selected nodes of
+    ``transformer.model.transformer_blocks``, measured at 259.05us -> 134.90us
+    -- the share-based form claims 47.9% of end-to-end. The saving is
+    124.15us across 384 invocations per generation against a 3281831us
+    generation: 1.45%.
+
+    Both figures come from measurements; only one answers the question.
+    """
+    if total_generation_us <= 0:
+        raise ValueError("total_generation_us must be positive")
+    if calls_per_generation < 0:
+        raise ValueError("calls_per_generation must not be negative")
+    saving_us = (baseline_us - candidate_us) * calls_per_generation
+    return max(0.0, saving_us / total_generation_us)
+
+
 def projected_end_to_end_speedup(
     improvements: Sequence[float],
     *,

@@ -165,3 +165,90 @@ def test_calls_without_a_named_range_do_not_sum_event_counts() -> None:
     ]
     _, _, calls = _aggregate_region_timing(region, rows)
     assert calls == 40, "bounded below by the largest row, never 65"
+
+
+# -- subregion impact must not inherit the parent's share ----------------
+
+
+def test_subregion_impact_uses_latency_and_invocations_not_parent_share() -> None:
+    """The repaired r4 transformer candidate, both ways.
+
+    It replaces 22 selected nodes of transformer.model.transformer_blocks, a
+    region discovery attributed 100% of end-to-end (over-attributed, then
+    clamped). Multiplying that share by the subregion's 1.920x measured
+    speedup claims 47.9% of end-to-end. The saving is 124.15us per call across
+    384 invocations per generation of a 3.2818s generation: 1.45%.
+    """
+    from autokernel.discovery.ranking import measured_e2e_improvement_from_latency
+
+    share_based = measured_e2e_improvement(1.0, 1.92031931728342)
+    latency_based = measured_e2e_improvement_from_latency(
+        baseline_us=259.05,
+        candidate_us=134.90,
+        calls_per_generation=1151 / 3,
+        total_generation_us=3281831.4481992275,
+    )
+    assert share_based == pytest.approx(0.479, abs=1e-3)
+    assert latency_based == pytest.approx(0.01451, abs=1e-4)
+    assert share_based > latency_based * 30
+
+    # Only the latency-based figure is defensible, and it still clears 1.01x.
+    assert meets_end_to_end_target([latency_based], min_end_to_end_speedup=1.01)
+
+
+def test_a_subregion_saving_swamped_by_dispatch_overhead_is_rejected() -> None:
+    """124.15us saved per call cannot survive a larger per-call overhead."""
+    from autokernel.discovery.ranking import measured_e2e_improvement_from_latency
+
+    improvement = measured_e2e_improvement_from_latency(
+        baseline_us=259.05,
+        candidate_us=134.90,
+        calls_per_generation=384,
+        total_generation_us=3281831.4481992275,
+    )
+    # An overhead of 200us per call over 384 calls is 2.3% of the generation.
+    overhead_fraction = 200.0 * 384 / 3281831.4481992275
+    assert not meets_end_to_end_target(
+        [improvement],
+        min_end_to_end_speedup=1.01,
+        dispatch_overhead_fraction=overhead_fraction,
+    )
+
+
+def test_latency_model_rejects_a_nonsensical_total() -> None:
+    from autokernel.discovery.ranking import measured_e2e_improvement_from_latency
+
+    with pytest.raises(ValueError):
+        measured_e2e_improvement_from_latency(
+            baseline_us=100.0, candidate_us=50.0,
+            calls_per_generation=10, total_generation_us=0.0,
+        )
+
+
+def test_a_slower_candidate_returns_no_gain() -> None:
+    from autokernel.discovery.ranking import measured_e2e_improvement_from_latency
+
+    assert measured_e2e_improvement_from_latency(
+        baseline_us=100.0, candidate_us=150.0,
+        calls_per_generation=10, total_generation_us=1_000_000.0,
+    ) == 0.0
+
+
+def test_realized_impact_picks_the_basis_from_selection_mode() -> None:
+    from autokernel.optimize.search import _realized_impact
+
+    primary = {"pytorch_latency_us": 259.05, "kernel_latency_us": 134.90}
+    subregion = {
+        "selection_mode": "derived_subregion",
+        "calls": 1151,
+        "total_cuda_time_us": 3281831.4481992275,
+        "profiled_generations": 3,
+    }
+    value, basis = _realized_impact(subregion, primary, 1.0, 1.920)
+    assert basis == "measured_latency_x_invocations"
+    assert value == pytest.approx(0.01451, abs=1e-4)
+
+    whole = {"selection_mode": "whole_region"}
+    value, basis = _realized_impact(whole, primary, 0.023336937532381377, 1.1153512914215753)
+    assert basis == "region_share_x_speedup"
+    assert value == pytest.approx(0.0024, abs=1e-4)

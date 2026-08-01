@@ -27,6 +27,7 @@ from autokernel.specgen import (
 )
 from autokernel.discovery.ranking import (
     measured_e2e_improvement,
+    measured_e2e_improvement_from_latency,
     projected_end_to_end_speedup,
 )
 from autokernel.verification.policy import ParityPolicy
@@ -81,6 +82,48 @@ def _parity_settings(config: Mapping[str, Any]) -> tuple[str, float | None]:
         policy = str(override)
     ceiling = config.get("max_absolute_error")
     return policy, (float(ceiling) if ceiling is not None else None)
+
+
+def _realized_impact(
+    candidate: Mapping[str, Any],
+    primary: Mapping[str, Any],
+    share: float,
+    speedup: float,
+) -> tuple[float, str]:
+    """End-to-end gain this measured kernel returns, and how it was derived.
+
+    A ``derived_subregion`` candidate replaces part of a larger timed region,
+    so its ``share_of_e2e`` -- the parent's -- must not be multiplied by a
+    speedup measured on the subregion alone. When discovery supplied a real
+    invocation count and a model total, the absolute per-call saving answers
+    the question directly. Otherwise fall back to the share-based form and say
+    so, because for a whole-region candidate the two agree.
+    """
+    # ``calls`` is the invocation count observed across ``profiled_generations``
+    # generations, while ``total_cuda_time_us`` is already a per-generation
+    # total. Only the call count is scaled; dividing both would silently drop
+    # the ratio by a factor of ``profiled_generations``.
+    calls = candidate.get("calls")
+    total_us = candidate.get("total_cuda_time_us")
+    generations = float(candidate.get("profiled_generations") or 1.0) or 1.0
+    if (
+        candidate.get("selection_mode") == "derived_subregion"
+        and isinstance(calls, (int, float))
+        and not isinstance(calls, bool)
+        and calls > 0
+        and isinstance(total_us, (int, float))
+        and float(total_us) > 0
+    ):
+        return (
+            measured_e2e_improvement_from_latency(
+                baseline_us=float(primary["pytorch_latency_us"]),
+                candidate_us=float(primary["kernel_latency_us"]),
+                calls_per_generation=float(calls) / generations,
+                total_generation_us=float(total_us),
+            ),
+            "measured_latency_x_invocations",
+        )
+    return measured_e2e_improvement(share, speedup), "region_share_x_speedup"
 
 
 def _benchmark_command(
@@ -512,7 +555,7 @@ def validate_candidates(
             # region's share of the model, and require that it clear the
             # campaign's gate with dispatch overhead charged against it.
             share = float(candidate.get("share_of_e2e") or 0.0)
-            realized = measured_e2e_improvement(share, speedup)
+            realized, impact_basis = _realized_impact(candidate, primary, share, speedup)
             projected = projected_end_to_end_speedup(
                 [realized], dispatch_overhead_fraction=dispatch_overhead
             )
@@ -524,6 +567,7 @@ def validate_candidates(
                     f"candidate cannot reach the campaign's end-to-end target: "
                     f"region is {share * 100:.3f}% of end-to-end and measured "
                     f"{speedup:.4f}x, returning {realized * 100:.3f}% "
+                    f"(basis: {impact_basis}) "
                     f"(projected {projected:.5f}x < required "
                     f"{min_end_to_end_speedup:.5f}x). Discovery's upper bound "
                     f"of {optimistic * 100:.3f}% assumed the region's cost "
@@ -580,6 +624,7 @@ def validate_candidates(
                         # a region share and an upper bound again.
                         "region_share_of_e2e": share,
                         "measured_e2e_improvement": realized,
+                        "impact_basis": impact_basis,
                         "projected_end_to_end_speedup": projected,
                         "min_end_to_end_speedup": min_end_to_end_speedup,
                         "dispatch_overhead_fraction": dispatch_overhead,
