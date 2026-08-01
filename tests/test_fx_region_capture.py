@@ -248,10 +248,15 @@ def test_auto_falls_back_from_symbolic_to_export_for_shape_branch():
         "symbolic",
         "export",
     ]
-    assert result.mode_failures == (
-        "capture_failed:symbolic:dynamic_python_control_flow:TraceError",
+    assert len(result.mode_failures) == 1
+    assert result.mode_failures[0].startswith(
+        "capture_failed:symbolic:dynamic_python_control_flow:"
     )
     assert result.graph_breaks[0].reason == result.mode_failures[0]
+    assert not any(
+        reason.startswith("capture_failed:")
+        for reason in result.region.rejection_reasons
+    )
 
 
 def test_cached_rotary_shape_branch_uses_export_fallback():
@@ -444,6 +449,33 @@ def test_failure_diagnostics_never_serialize_raw_exception_text(monkeypatch):
 
     serialized = str([item.as_dict() for item in result.graph_breaks])
     assert result.region is None
+    assert "private customer" not in serialized
+    assert "secret" not in serialized
+    assert "source_code" not in serialized
+
+
+def test_output_metadata_failure_never_serializes_raw_exception_text(
+    monkeypatch,
+):
+    def fail_with_sensitive_text(*args, **kwargs):
+        raise RuntimeError(
+            "prompt=private customer text token=secret source_code=hidden"
+        )
+
+    monkeypatch.setattr(
+        fx_capture,
+        "_output_tensor_examples",
+        fail_with_sensitive_text,
+    )
+    result = capture_module_region(
+        _PureBlock(),
+        (torch.randn(2, 8), torch.randn(2, 8)),
+        name="test.safe_output_failure",
+    )
+
+    serialized = str([item.as_dict() for item in result.graph_breaks])
+    assert result.region is not None
+    assert "output_meta_failed:RuntimeError" in serialized
     assert "private customer" not in serialized
     assert "secret" not in serialized
     assert "source_code" not in serialized

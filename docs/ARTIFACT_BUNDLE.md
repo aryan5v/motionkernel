@@ -16,7 +16,7 @@ store/
 
 | Section | Contents |
 | --- | --- |
-| `operation` | operation name, 32-hex `graph_fingerprint`, parent module, canonical operation list |
+| `operation` | operation name, 32-hex parent `graph_fingerprint`, parent module, canonical operation list, and optional export-subgraph rewrite recipe |
 | `signature` | input and output tensor signatures (shape, stride, dtype, device type, `requires_grad`) |
 | `entry_point` | the candidate `file` and `symbol` |
 | `files` | every bundled file with its SHA-256 and byte size |
@@ -104,6 +104,13 @@ module first, then the exact arguments its `forward` received. Passing the
 module is what lets one artifact serve every block in a repeated stack -- the
 kernel reads the parameters it needs from the module it was handed, instead of
 the loader having to know which parameters exist.
+
+For `target_kind: subgraph`, the same convention receives the ordered internal
+boundary tensors instead of the parent forward arguments. The manifest pins
+the export capture mode, selected node ids, boundary refs, and every externally
+used output. FastVideo rebuilds the graph against each live repeated block, so
+unfused nodes continue to read that block's own weights; the artifact never
+contains parameter paths or values.
 
 ## Failure behavior
 

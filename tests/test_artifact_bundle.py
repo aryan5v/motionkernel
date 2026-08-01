@@ -137,6 +137,46 @@ def _sections(**overrides):
     return sections
 
 
+def _subgraph_operation():
+    return {
+        "name": "generated_blocks_scale_add",
+        "graph_fingerprint": FINGERPRINT,
+        "parent_module": "transformer.blocks",
+        "operations": ["aten::mul", "aten::add"],
+        "target_kind": "subgraph",
+        "capture_mode": "export",
+        "selected_node_ids": ["n4", "n5"],
+        "boundary_refs": ["p0", "n3"],
+        "output_node_ids": ["n5"],
+    }
+
+
+def test_subgraph_rewrite_contract_round_trips(tmp_path):
+    source = _payload(tmp_path)
+    sections = _sections(operation=_subgraph_operation())
+    document = build_manifest(source, sections)
+
+    assert document["operation"] == _subgraph_operation()
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("capture_mode", "dynamo", "requires 'export'"),
+        ("selected_node_ids", [], "non-empty"),
+        ("boundary_refs", ["weight.path"], "canonical executable-IR"),
+        ("output_node_ids", ["n9"], "must be selected nodes"),
+    ],
+)
+def test_subgraph_rewrite_contract_fails_closed(tmp_path, field, value, message):
+    source = _payload(tmp_path)
+    operation = _subgraph_operation()
+    operation[field] = value
+
+    with pytest.raises(ArtifactError, match=message):
+        build_manifest(source, _sections(operation=operation))
+
+
 def _payload(
     tmp_path: Path,
     *,

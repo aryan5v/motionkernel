@@ -2,6 +2,67 @@
 
 ## Unreleased (downstream)
 
+- Added a fail-closed preflight phase and an immutable run contract to the
+  optimize control plane (`autokernel/optimize/preflight.py`). Preflight runs
+  before any stage or campaign-state mutation and validates the FastVideo
+  checkout structure, workload schema, atomic output writability and free disk
+  space, stage command
+  names/placeholders/executables, the resolved search-agent executable, the
+  repository entry points the adapters invoke, and every numeric budget,
+  threshold, and timeout. `optimize.py --preflight-only` writes the report and
+  exits without running a stage or creating campaign state. The versioned
+  `preflight.json` records pass/fail, stable reason codes, MotionKernel and
+  FastVideo commit identities, workload identity and SHA-256, and the execution
+  policy; command configurations are persisted only as SHA-256 digests plus a
+  program basename, so no credential, prompt, or raw argument is ever stored.
+  A campaign additionally pins its material configuration into a write-once
+  `run_contract.json`, and every resume fails closed with a stable
+  `contract_mismatch_*` code when the model, workload content, FastVideo
+  checkout, baseline, promotion threshold, stage commands, search-agent
+  command, or candidate timeout differs. `budget_hours` is deliberately an
+  invocation allowance rather than evidence identity: a non-terminal resume
+  may grant more time and receives a fresh wall-clock deadline without
+  changing the write-once contract. Workload drift is detected by content
+  hash rather than path, and a checkout is identified by its git commit when
+  one is resolvable, so a moved checkout resumes while a changed commit does
+  not. Resuming a campaign whose contract is missing or unreadable also fails
+  closed.
+
+- Ranking now distinguishes an unsafe timed parent module from a validated
+  executable subregion inside its export graph. High-impact parents are
+  search-worthy only when the unchanged spec-generation safety boundary can
+  derive a connected allowlisted component; parent rejection reasons remain
+  visible and the reported impact is explicitly labeled as a parent-region
+  upper bound.
+- Added post-validation artifact finalization: `autokernel/artifact/finalizer.py`
+  converts a verified quarantined bundle into a `promoted` or `rejected` bundle
+  from measured full-generation evidence, preserving every payload byte and the
+  isolated benchmark record, writing the manifest atomically outside the bundle,
+  and re-verifying the finished bundle. Promotion requires output parity,
+  real dispatch selection, an `improved` classification, and the configured
+  end-to-end speedup threshold; anything incomplete or failed stays quarantined.
+  Finalization is write-once, so a resumed campaign can never weaken or corrupt
+  an already finalized artifact. The new `finalize` optimize stage reads the
+  selected artifact ids from FastVideo's `dispatch.json` decisions, fails closed
+  on ambiguous diagnostics or a missing selected bundle, leaves unselected
+  bundles quarantined, and reports the finalized paths and decisions.
+- Connected `optimize.py` production stages to the existing FastVideo
+  generation/profile launcher, MotionKernel discovery/spec generation and
+  artifact packager, and hash-verified end-to-end candidate validation. Search
+  now has a built-in autonomous-agent adapter (Codex by default, configurable
+  by argv), and isolated validation reruns the fixed full harness before
+  deriving package evidence; missing agents and missing measurements fail
+  instead of being mislabeled as no worthwhile candidate.
+- Safe-subregion generation now returns selected intermediate values that are
+  consumed by unsupported parent-graph nodes, allowing runtime rewrite to erase
+  the selected component without leaving external users behind.
+- Added the resumable `optimize.py` V1 control plane with isolated JSON stage
+  contracts, wall-clock and per-candidate budgets, durable receipts/morning
+  reports, and end-to-end-only promotion gates.
+- Added an honest `bench.py --baseline compile` performance baseline, recorded
+  as `baseline_mode` in benchmark result schema 2, with no eager fallback when
+  compilation is unavailable or fails.
+
 ### Universal workload and discovery foundation
 
 - Added versioned, metadata-only FastVideo workload manifests under
@@ -35,6 +96,13 @@
 
 ### Portable artifact bundles
 
+- Added export-subgraph rewrite recipes and exact boundary layout metadata so
+  a searched internal fusion can be inserted into a repeated FastVideo block
+  without replacing the whole block or adding a model-specific runtime path.
+- Graph-derived input generation now preserves observed tensor strides instead
+  of silently benchmarking every boundary as contiguous.
+- Added a generated runtime adapter that converts FastVideo's positional
+  subgraph boundaries into the keyword input contract used by searched kernels.
 - Added the versioned artifact bundle contract under `autokernel/artifact/`: a
   strictly validated, metadata-only manifest recording operation identity and
   graph fingerprint, input/output tensor signatures, candidate entry point and

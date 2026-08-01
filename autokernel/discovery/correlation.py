@@ -8,8 +8,9 @@ metrics without double-counting nested scopes.
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 from .profiler_parse import parse_key_averages_rows
 from .ranking import optimistic_e2e_improvement
@@ -364,12 +365,21 @@ def correlate_discovery_report(
     """
     # Parse profiler rows
     profiler_operators = parse_key_averages_rows(profiler_export_rows)
+    total_cuda_time_us = fx_discovery_report.total_cuda_time_us
+    if total_cuda_time_us <= 0:
+        # FX capture is intentionally CPU-only and therefore normally carries
+        # no device total.  Use the profiler's exclusive-time accounting here;
+        # summing inclusive CUDA time would count nested ranges more than once.
+        total_cuda_time_us = sum(
+            max(operator.self_cuda_time_us, 0.0)
+            for operator in profiler_operators
+        )
 
     # Correlate profiler rows with FX regions
     searchable_regions, unmatched_rows = correlate_profiler_to_regions(
         profiler_operators,
         fx_discovery_report.regions,
-        total_cuda_time_us=fx_discovery_report.total_cuda_time_us,
+        total_cuda_time_us=total_cuda_time_us,
     )
     unsupported = [
         item.as_dict() for item in fx_discovery_report.unsupported
@@ -394,7 +404,7 @@ def correlate_discovery_report(
             "producer": dict(fx_discovery_report.producer),
             "workload": dict(fx_discovery_report.workload),
             "environment": dict(fx_discovery_report.environment),
-            "total_cuda_time_us": fx_discovery_report.total_cuda_time_us,
+            "total_cuda_time_us": total_cuda_time_us,
             "operators": [op.as_dict() for op in profiler_operators],
             "regions": [region.as_dict() for region in searchable_regions],
             "graph_breaks": [item.as_dict() for item in fx_discovery_report.graph_breaks],

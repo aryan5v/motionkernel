@@ -115,29 +115,56 @@ class ValueMeta:
     shape: tuple[int, ...]
     dtype: str
     requires_grad: bool = False
+    stride: tuple[int, ...] | None = None
+    device_type: str | None = None
 
     @classmethod
     def from_dict(cls, value: Any, location: str) -> ValueMeta:
         raw = _mapping(value, location)
-        _keys(raw, {"shape", "dtype", "requires_grad"}, location)
+        _keys(
+            raw,
+            {"shape", "dtype", "requires_grad", "stride", "device_type"},
+            location,
+        )
         dtype = raw.get("dtype")
         if not isinstance(dtype, str) or dtype not in _DTYPES:
             raise _fail(f"{location}.dtype", f"unsupported dtype {dtype!r}")
         requires_grad = raw.get("requires_grad", False)
         if not isinstance(requires_grad, bool):
             raise _fail(f"{location}.requires_grad", "must be a bool")
+        shape = _shape(raw.get("shape"), f"{location}.shape")
+        stride_value = raw.get("stride")
+        stride = None
+        if stride_value is not None:
+            stride = _shape(stride_value, f"{location}.stride")
+            if len(stride) != len(shape):
+                raise _fail(
+                    f"{location}.stride", "must have the same length as shape"
+                )
+        device_type = raw.get("device_type")
+        if device_type is not None and (
+            not isinstance(device_type, str) or not device_type
+        ):
+            raise _fail(f"{location}.device_type", "must be a non-empty string")
         return cls(
-            shape=_shape(raw.get("shape"), f"{location}.shape"),
+            shape=shape,
             dtype=dtype,
             requires_grad=requires_grad,
+            stride=stride,
+            device_type=device_type,
         )
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        result = {
             "shape": list(self.shape),
             "dtype": self.dtype,
             "requires_grad": self.requires_grad,
         }
+        if self.stride is not None:
+            result["stride"] = list(self.stride)
+        if self.device_type is not None:
+            result["device_type"] = self.device_type
+        return result
 
 
 def validate_expr(value: Any, location: str) -> None:

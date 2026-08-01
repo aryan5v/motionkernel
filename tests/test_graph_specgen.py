@@ -49,7 +49,18 @@ def test_kernel_spec_accepts_graph_fingerprint() -> None:
 
 
 def _meta(shape: tuple[int, ...], dtype: str = "float32") -> dict:
-    return {"shape": list(shape), "dtype": dtype, "requires_grad": False}
+    stride = []
+    running = 1
+    for dim in reversed(shape):
+        stride.append(running)
+        running *= max(dim, 1)
+    return {
+        "shape": list(shape),
+        "stride": list(reversed(stride)),
+        "dtype": dtype,
+        "device_type": "cuda",
+        "requires_grad": False,
+    }
 
 
 def _input(name: str, shape: tuple[int, ...], dtype: str = "float32") -> dict:
@@ -147,21 +158,21 @@ def _region_for(ir: ExecutableIR, operations: list[str]) -> GraphRegion:
         cuda_time_us=1000.0,
         self_cuda_time_us=900.0,
         calls=240,
-        attributes={"executable_ir": ir.as_dict()},
+        attributes={"executable_ir": ir.as_dict(), "capture_mode": "export"},
     )
 
 
 def _operations_for(ir: ExecutableIR) -> list[str]:
-    return [
-        (
-            "aten::select"
-            if node.target == "operator.getitem"
-            else "aten::" + node.target.split(".", 2)[1]
-            if node.target.startswith("aten.")
-            else node.target
-        )
-        for node in ir.nodes
-    ]
+    operations = []
+    for node in ir.nodes:
+        if node.target == "operator.getitem":
+            operations.append("aten::select")
+        elif node.target.count(".") >= 2:
+            namespace, operation_name, _overload = node.target.split(".", 2)
+            operations.append(f"{namespace}::{operation_name}")
+        else:
+            operations.append(node.target)
+    return operations
 
 
 def test_derivation_isolates_allowlisted_component_with_explicit_boundary() -> None:
@@ -199,6 +210,102 @@ def test_derivation_isolates_allowlisted_component_with_explicit_boundary() -> N
     assert [item.name for item in derived.ir.inputs] == ["input_0"]
     assert derived.ir.inputs[0].meta.shape == (2, 4)
     assert derived.parent_cuda_time_us == 1000.0
+    assert derived.parent_module == "transformer.blocks"
+
+
+def test_derivation_returns_selected_values_used_outside_component() -> None:
+    ir = _ir(
+        [_input("x", (2, 3)), _input("weight", (3, 3))],
+        [
+            _node(
+                "negative",
+                "aten.neg.default",
+                [_ref("x")],
+                meta=_meta((2, 3)),
+            ),
+            _node(
+                "updated",
+                "aten.add.Tensor",
+                [_ref("negative"), _ref("x")],
+                meta=_meta((2, 3)),
+            ),
+            _node(
+                "unsupported",
+                "aten.mm.default",
+                [_ref("negative"), _ref("weight")],
+                meta=_meta((2, 3)),
+            ),
+        ],
+        [_ref("updated"), _ref("unsupported")],
+    )
+
+    derived = derive_safe_subregion(
+        _region_for(ir, ["aten::neg", "aten::add", "aten::mm"])
+    )
+
+    assert derived.selected_node_ids == ("negative", "updated")
+    assert derived.output_node_ids == ("updated", "negative")
+
+
+def test_derivation_does_not_span_an_unsupported_topological_gap() -> None:
+    ir = _ir(
+        [_input("x", (2, 3)), _input("weight", (3, 3))],
+        [
+            _node(
+                "early",
+                "aten.neg.default",
+                [_ref("x")],
+                meta=_meta((2, 3)),
+            ),
+            _node(
+                "gap",
+                "aten.mm.default",
+                [_ref("early"), _ref("weight")],
+                meta=_meta((2, 3)),
+            ),
+            _node(
+                "late",
+                "aten.add.Tensor",
+                [_ref("early"), _ref("gap")],
+                meta=_meta((2, 3)),
+            ),
+        ],
+        [_ref("late")],
+    )
+
+    derived = derive_safe_subregion(
+        _region_for(ir, ["aten::neg", "aten::mm", "aten::add"])
+    )
+
+    assert derived.selected_node_ids == ("early",)
+    assert derived.boundary_refs == ("x",)
+    assert derived.output_node_ids == ("early",)
+
+
+def test_derivation_preserves_custom_op_identity_but_excludes_it() -> None:
+    ir = _ir(
+        [_input("x", (2, 3))],
+        [
+            _node(
+                "attention",
+                "fastvideo._flash_attn_default_forward.default",
+                [_ref("x")],
+                meta=_meta((2, 3)),
+            ),
+            _node(
+                "negative",
+                "aten.neg.default",
+                [_ref("attention")],
+                meta=_meta((2, 3)),
+            ),
+        ],
+        [_ref("negative")],
+    )
+
+    derived = derive_safe_subregion(_region_for(ir, _operations_for(ir)))
+
+    assert [node.target for node in derived.ir.nodes] == ["aten.neg.default"]
+    assert derived.boundary_refs == ("attention",)
 
 
 def _to_fp32(node_id: str, source: str, shape: tuple[int, ...]) -> dict:
@@ -439,6 +546,10 @@ def test_artifact_round_trip_carries_parent_provenance(tmp_path) -> None:
     assert manifest["parent"]["timing_scope"] == (
         "parent_region_not_selected_subregion"
     )
+    assert manifest["parent"]["capture_mode"] == "export"
+    assert manifest["selected_node_ids"]
+    assert manifest["boundary_refs"]
+    assert manifest["output_node_ids"]
     report = DiscoveryReport(
         producer={"name": "test", "version": "1"},
         workload={"workload_id": "wan-test", "model_id": "wan"},
@@ -455,6 +566,111 @@ def test_artifact_round_trip_carries_parent_provenance(tmp_path) -> None:
     assert loaded.name == manifest["name"]
     corpus = json.loads(paths["corpus"].read_text())
     assert corpus["cases"][0]["weight"] == region.calls
+
+
+def test_generated_manifest_builds_subgraph_dispatch_contract() -> None:
+    from autokernel.specgen import build_dispatch_contract
+
+    region = _region_for(_gated_residual_ir(), [
+        "aten::_to_copy",
+        "aten::_to_copy",
+        "aten::unsqueeze",
+        "aten::mul",
+        "aten::add",
+        "aten::_to_copy",
+    ])
+    manifest = build_manifest(region)
+    contract = build_dispatch_contract(manifest)
+
+    assert contract["operation"]["target_kind"] == "subgraph"
+    assert contract["operation"]["graph_fingerprint"] == region.fingerprint
+    assert contract["operation"]["parent_module"] == "transformer.blocks"
+    assert contract["operation"]["boundary_refs"] == manifest["boundary_refs"]
+    assert contract["signature"]["inputs"]
+    assert contract["signature"]["outputs"]
+
+
+def test_runtime_adapter_converts_boundary_positionals_to_search_kwargs(
+    tmp_path, torch_mod
+) -> None:
+    import importlib.util
+
+    from autokernel.specgen import write_runtime_adapter
+
+    region = _region_for(_gated_residual_ir(), [
+        "aten::_to_copy",
+        "aten::_to_copy",
+        "aten::unsqueeze",
+        "aten::mul",
+        "aten::add",
+        "aten::_to_copy",
+    ])
+    manifest = build_manifest(region)
+    candidate = tmp_path / "candidate.py"
+    candidate.write_text(
+        "def kernel_fn(**inputs):\n"
+        "    values = list(inputs.values())\n"
+        "    return values[0] + values[1]\n",
+        encoding="utf-8",
+    )
+    adapter = write_runtime_adapter(manifest, tmp_path / "entry.py")
+    spec = importlib.util.spec_from_file_location("test_runtime_adapter", adapter)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    generated_ir = ExecutableIR.from_dict(manifest["executable_ir"])
+    inputs = [torch_mod.ones(item.meta.shape) for item in generated_ir.inputs]
+
+    actual = module.fused_subgraph(object(), *inputs)
+
+    torch_mod.testing.assert_close(actual, inputs[0] + inputs[1])
+
+
+def test_runtime_adapter_import_writes_no_candidate_bytecode(
+    tmp_path, torch_mod
+) -> None:
+    """The generated adapter must not write bytecode into an immutable bundle.
+
+    Runtimes import ``entry.py`` from inside a verified artifact bundle; a
+    bytecode cache written next to ``candidate.py`` would be undeclared
+    executable content and fail the bundle's next verification.
+    """
+    import importlib.util
+
+    from autokernel.specgen import write_runtime_adapter
+
+    region = _region_for(_gated_residual_ir(), [
+        "aten::_to_copy",
+        "aten::_to_copy",
+        "aten::unsqueeze",
+        "aten::mul",
+        "aten::add",
+        "aten::_to_copy",
+    ])
+    manifest = build_manifest(region)
+    (tmp_path / "candidate.py").write_text(
+        "def kernel_fn(**inputs):\n"
+        "    values = list(inputs.values())\n"
+        "    return values[0] + values[1]\n",
+        encoding="utf-8",
+    )
+    adapter = write_runtime_adapter(manifest, tmp_path / "entry.py")
+
+    # Simulate a runtime that imports the adapter through the standard source
+    # loader without bytecode suppression of its own.
+    spec = importlib.util.spec_from_file_location(
+        "test_runtime_adapter_bytecode", adapter
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    stray = [
+        path
+        for path in tmp_path.rglob("*.pyc")
+        if path.name.startswith("candidate")
+    ]
+    assert stray == []
 
 
 def test_discovery_specgen_cli_writes_bench_artifacts(tmp_path, repo_root) -> None:

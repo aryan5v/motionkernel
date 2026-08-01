@@ -8,11 +8,12 @@ import shlex
 import shutil
 import subprocess
 import sys
-import tempfile
 from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from autokernel._io import write_json_atomic, write_text_atomic
 
 from .types import (
     CampaignError,
@@ -27,34 +28,11 @@ def _utc_now() -> str:
 
 
 def _write_json_atomic(path: Path, payload: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(
-        mode="w",
-        encoding="utf-8",
-        dir=path.parent,
-        prefix=f".{path.name}.",
-        suffix=".tmp",
-        delete=False,
-    ) as handle:
-        json.dump(payload, handle, indent=2)
-        handle.write("\n")
-        temporary = Path(handle.name)
-    temporary.replace(path)
+    write_json_atomic(path, payload)
 
 
 def _write_text_atomic(path: Path, value: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(
-        mode="w",
-        encoding="utf-8",
-        dir=path.parent,
-        prefix=f".{path.name}.",
-        suffix=".tmp",
-        delete=False,
-    ) as handle:
-        handle.write(value)
-        temporary = Path(handle.name)
-    temporary.replace(path)
+    write_text_atomic(path, value)
 
 
 def _corpus_for(operation: str, repo_root: Path) -> str | None:

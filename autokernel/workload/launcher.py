@@ -11,9 +11,12 @@ import json
 import os
 import subprocess
 import sys
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any
+
+from autokernel._io import write_json_atomic
 
 from .result import (
     GenerationRunResult,
@@ -104,10 +107,7 @@ def _read_state(path: Path) -> dict[str, Any]:
 
 
 def _write_state(path: Path, state: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
-    temporary.replace(path)
+    write_json_atomic(path, state)
 
 
 def resolve_launcher(
@@ -142,6 +142,7 @@ def build_launcher_command(
     mode: str,
     output_dir: Path,
     model_override: str | None = None,
+    profile_output: Path | None = None,
 ) -> list[str]:
     """Construct an argv list for one launcher process (no shell)."""
     command = [
@@ -156,6 +157,8 @@ def build_launcher_command(
     ]
     if model_override:
         command.extend(["--model", model_override])
+    if profile_output is not None:
+        command.extend(["--profile-output", str(profile_output)])
     return command
 
 
@@ -168,6 +171,7 @@ def run_mode(
     python: str | None = None,
     launcher_script: str | Path | None = None,
     model_override: str | None = None,
+    profile_output: str | Path | None = None,
     env: Mapping[str, str] | None = None,
     check: bool = True,
     timeout: float | None = None,
@@ -193,6 +197,9 @@ def run_mode(
         mode=mode,
         output_dir=Path(output_dir),
         model_override=model_override,
+        profile_output=(
+            Path(profile_output) if profile_output is not None else None
+        ),
     )
     child_env = os.environ.copy()
     if env:
@@ -371,13 +378,7 @@ def run_ab(
                 comparison["reason"] = (
                     f"output parity failed: {parity['reason']}"
                 )
-            temporary = paths.comparison_path.with_suffix(
-                paths.comparison_path.suffix + ".tmp"
-            )
-            temporary.write_text(
-                json.dumps(comparison, indent=2) + "\n", encoding="utf-8"
-            )
-            temporary.replace(paths.comparison_path)
+            write_json_atomic(paths.comparison_path, comparison)
             completed.add("compare")
             state["completed_stages"] = sorted(completed)
             _write_state(paths.state_path, state)

@@ -44,6 +44,14 @@ tensor output as an explicit generated input when output metadata is
 available. Parent-region CUDA timing is retained as provenance and is labeled
 as parent timing; it is not misreported as selected-subregion latency.
 
+The generated manifest also contains the export rewrite recipe:
+`selected_node_ids`, ordered `boundary_refs`, and `output_node_ids`. The
+artifact packager derives runtime operation and tensor-signature sections with
+`build_dispatch_contract()`. Boundary shape, stride, dtype, device type, and
+gradient metadata must all be present; a partial recipe fails closed.
+`write_runtime_adapter()` bridges the benchmark candidate's keyword arguments
+to FastVideo's positional boundary-tensor calling convention.
+
 The initial allowlist covers the arithmetic, LayerNorm, cast, broadcast, view,
 transpose, slice, and tuple-selection operations needed to derive Wan
 normalization/residual candidates. Extend it only with captured profile
