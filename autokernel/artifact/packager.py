@@ -8,9 +8,10 @@ load without knowing which model it came from.
 from __future__ import annotations
 
 import shutil
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 from autokernel import __version__ as _AUTOKERNEL_VERSION
 from autokernel.verification.results import write_result_atomic
@@ -38,7 +39,7 @@ _REQUIRED_SECTIONS = (
     "evidence",
     "promotion",
 )
-_COMPUTED_SECTIONS = ("files", "schema_version")
+_COMPUTED_SECTIONS = ("created_at", "files", "producer", "schema_version")
 
 
 def _payload_files(source: Path) -> list[Path]:

@@ -8,8 +8,9 @@ supported by publishing a bundle, not by editing this module.
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from typing import Any, Iterable, Sequence
+from typing import Any
 
 from .types import (
     ANY,
@@ -32,6 +33,7 @@ REASON_EXECUTION_MODE = "execution_mode_unsupported"
 REASON_DISTRIBUTED_MODE = "distributed_mode_unsupported"
 REASON_NOT_PROMOTED = "not_promoted"
 REASON_EVIDENCE_INCOMPLETE = "evidence_incomplete"
+REASON_NOT_SELECTED = "not_selected"
 
 REJECTION_REASONS = (
     REASON_FINGERPRINT_MISMATCH,
@@ -47,6 +49,7 @@ REJECTION_REASONS = (
     REASON_DISTRIBUTED_MODE,
     REASON_NOT_PROMOTED,
     REASON_EVIDENCE_INCOMPLETE,
+    REASON_NOT_SELECTED,
 )
 
 
@@ -76,7 +79,7 @@ class RuntimeProfile:
         model_revision: str = ANY,
         execution_mode: str = "inference",
         distributed_mode: str = "single",
-    ) -> "RuntimeProfile":
+    ) -> RuntimeProfile:
         """Read torch/CUDA/Triton identity from the running process."""
         import torch
 
@@ -296,7 +299,11 @@ def match_artifact(
         key=lambda item: (item.evidence.benchmark.speedup, item.artifact_id),
     )
     rejections.extend(
-        Rejection(item.artifact_id, "not_selected", "a faster artifact was chosen")
+        Rejection(
+            item.artifact_id,
+            REASON_NOT_SELECTED,
+            "a faster artifact was chosen",
+        )
         for item in candidates
         if item is not best
     )
