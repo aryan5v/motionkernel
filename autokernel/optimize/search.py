@@ -25,6 +25,7 @@ from autokernel.specgen import (
     spec_from_manifest,
     write_runtime_adapter,
 )
+from autokernel.verification.policy import ParityPolicy
 from autokernel.workload import load_workload
 
 
@@ -53,6 +54,31 @@ def _generated(candidate: Mapping[str, Any]) -> dict[str, Path]:
     return paths
 
 
+def _parity_settings(config: Mapping[str, Any]) -> tuple[str, float | None]:
+    """Resolve the workload's output contract for the kernel-level gates.
+
+    The workload file is authoritative: it is what declares
+    ``parity.policy``. ``config`` may override the absolute-error ceiling,
+    which has no workload-level home yet. A config naming no workload gets the
+    strictest policy, because a gate that cannot find its contract must not
+    invent a permissive one.
+    """
+    policy = "byte_equal"
+    workload_path = config.get("workload")
+    if workload_path:
+        try:
+            workload = load_workload(Path(str(workload_path)))
+        except Exception:  # noqa: BLE001 - an unreadable workload stays strict
+            workload = None
+        if workload is not None:
+            policy = ParityPolicy.from_workload(workload).policy
+    override = config.get("parity_policy")
+    if override:
+        policy = str(override)
+    ceiling = config.get("max_absolute_error")
+    return policy, (float(ceiling) if ceiling is not None else None)
+
+
 def _benchmark_command(
     repo_root: Path,
     generated: Mapping[str, Path],
@@ -60,6 +86,8 @@ def _benchmark_command(
     *,
     baseline: str,
     quick: bool,
+    parity_policy: str = "byte_equal",
+    max_absolute_error: float | None = None,
 ) -> list[str]:
     command = [
         sys.executable,
@@ -71,9 +99,17 @@ def _benchmark_command(
         "--shape-corpus-only",
         "--baseline",
         baseline,
+        # The workload's output contract governs every gate, not just the final
+        # frame comparison. Without this the quick search benchmark reports a
+        # candidate as correctness-passing on a 1e-2 tolerance that the
+        # workload never agreed to.
+        "--parity-policy",
+        parity_policy,
         "--result-json",
         str(result_path),
     ]
+    if max_absolute_error is not None:
+        command.extend(["--max-absolute-error", repr(float(max_absolute_error))])
     if quick:
         command.append("--quick")
     return command
@@ -87,6 +123,8 @@ def _run_benchmark(
     *,
     baseline: str,
     quick: bool,
+    parity_policy: str = "byte_equal",
+    max_absolute_error: float | None = None,
     timeout: float | None = None,
 ) -> dict[str, Any]:
     result_path.parent.mkdir(parents=True, exist_ok=True)
@@ -96,6 +134,8 @@ def _run_benchmark(
         result_path,
         baseline=baseline,
         quick=quick,
+        parity_policy=parity_policy,
+        max_absolute_error=max_absolute_error,
     )
     try:
         completed = subprocess.run(
@@ -222,6 +262,7 @@ def search_candidates(
     """Run the configured coding agent, then measure every resulting kernel."""
     repo_root = Path(str(config.get("repo_root") or Path(__file__).parents[2])).resolve()
     baseline = str(config.get("baseline") or "eager")
+    parity_policy, max_absolute_error = _parity_settings(config)
     configured = config.get("search_agent_command")
     if configured is not None and not isinstance(configured, list):
         raise BuiltinSearchError("search_agent_command must be an argv list")
@@ -252,6 +293,8 @@ def search_candidates(
             quick_result,
             baseline=baseline,
             quick=True,
+            parity_policy=parity_policy,
+            max_absolute_error=max_absolute_error,
         )
         prompt_path = work / "prompt.md"
         prompt_path.write_text(
@@ -310,6 +353,8 @@ def search_candidates(
                 quick_result,
                 work / "benchmark.log",
                 baseline=baseline,
+                parity_policy=parity_policy,
+                max_absolute_error=max_absolute_error,
                 quick=True,
                 timeout=_remaining(deadline),
             )
@@ -399,6 +444,7 @@ def validate_candidates(
     """Independently validate searched kernels and build package requests."""
     repo_root = Path(str(config.get("repo_root") or Path(__file__).parents[2])).resolve()
     baseline = str(config.get("baseline") or "eager")
+    parity_policy, max_absolute_error = _parity_settings(config)
     workload = load_workload(Path(str(config["workload"])))
     budget_value = config.get("per_candidate_budget_seconds")
     per_candidate_budget = (
@@ -423,6 +469,8 @@ def validate_candidates(
                 result_path,
                 work / "benchmark.log",
                 baseline=baseline,
+                parity_policy=parity_policy,
+                max_absolute_error=max_absolute_error,
                 quick=False,
                 timeout=per_candidate_budget,
             )
