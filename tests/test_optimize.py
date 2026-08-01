@@ -8,16 +8,16 @@ from pathlib import Path
 
 import pytest
 
+from conftest import make_fastvideo_checkout, make_workload
+
 from autokernel.optimize import OptimizeConfig, OptimizeError, PIPELINE_STAGES, run_optimize
 from autokernel.optimize.runner import _decide_terminal
 from autokernel.optimize.stages import _load_stage_result
 
 
 def _config(tmp_path: Path, repo_root: Path, **overrides) -> OptimizeConfig:
-    checkout = tmp_path / "FastVideo"
-    checkout.mkdir(exist_ok=True)
-    workload = tmp_path / "workload.yaml"
-    workload.write_text("schema_version: 1\nname: cpu-contract\n", encoding="utf-8")
+    checkout = make_fastvideo_checkout(tmp_path)
+    workload = make_workload(tmp_path / "workload.json")
     values = {
         "fastvideo_checkout": checkout,
         "model": "test/model",
@@ -150,8 +150,10 @@ def test_resume_rejects_campaign_identity_drift(
     config = _config(tmp_path, repo_root)
     run_optimize(config)
 
+    # The run contract is compared during preflight, so drift is now reported
+    # with a stable reason code before any stage can run.
     changed = _config(tmp_path, repo_root, model="different/model")
-    with pytest.raises(OptimizeError, match="changed campaign configuration: model"):
+    with pytest.raises(OptimizeError, match="contract_mismatch_model"):
         run_optimize(changed)
 
 

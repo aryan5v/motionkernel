@@ -66,6 +66,8 @@ def run_dir_layout(output: Path) -> dict[str, Path]:
     return {
         "root": root,
         "config": root / "config.json",
+        "preflight": root / "preflight.json",
+        "run_contract": root / "run_contract.json",
         "state": root / "state.json",
         "receipt": root / "receipt.json",
         "morning_report": root / "morning_report.md",

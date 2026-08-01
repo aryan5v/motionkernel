@@ -362,9 +362,40 @@ python optimize.py \
 The durable pipeline is `baseline → profile → discover → specgen → search →
 isolated_validate → package → end_to_end_validate → finalize`. Every stage runs
 in an isolated subprocess and exchanges versioned JSON through the run directory.
-Re-running the same command resumes completed stages. A changed model,
-workload, baseline, adapter command, or validation policy is rejected on
-resume; use a new output directory or `--no-resume` for a fresh campaign.
+Re-running the same command resumes completed stages.
+
+### Preflight and the run contract
+
+Before any stage runs or any campaign state is written, a fail-closed preflight
+phase validates the whole environment so an unattended run fails in seconds
+rather than hours into a GPU allocation. It checks that the FastVideo checkout
+exists with the expected package and launcher structure, the workload parses
+under the shared schema, the output directory is atomically writable, stage
+command names and `{placeholders}` are known and their programs executable, the
+resolved search agent exists, and every budget, threshold, and timeout is
+finite and positive.
+
+```bash
+python optimize.py ... --preflight-only
+```
+
+`--preflight-only` writes `preflight.json` and exits without running a stage or
+creating campaign state. `preflight.json` records pass/fail, stable reason
+codes, MotionKernel and FastVideo commit identities, the workload SHA-256 and
+id, and the execution policy. It never records credentials, environment
+secrets, prompts, or raw command arguments: command configurations are stored
+as a SHA-256 digest plus the program basename, which is enough to pin and
+diagnose a command without persisting anything sensitive.
+
+When a campaign begins, the same material configuration is pinned into a
+write-once `run_contract.json`. Every resume compares against it and fails
+closed with a stable `contract_mismatch_*` reason code when the model, workload
+*content*, FastVideo checkout, baseline, promotion threshold, stage commands,
+search-agent command, or budget policy has changed. Hashing the workload means
+an edit to the same file path is caught, which a path comparison cannot see.
+A checkout is identified by its git commit when one is resolvable, so moving a
+checkout is fine while changing its commit is not. Use a new `--output` or
+`--no-resume` to start a fresh campaign.
 
 Built-in production adapters run the FastVideo baseline/profile launcher,
 MotionKernel discovery/spec generation, autonomous kernel search, independent
@@ -375,9 +406,9 @@ The JSON array supports `{repo_root}`, `{run_dir}`, `{candidate_dir}`,
 `{prompt_file}`, and `{last_message}` placeholders. The fixed validator—not the
 search agent—derives benchmark evidence and package inputs. See
 [`docs/OPTIMIZE_STAGE_ADAPTERS.md`](docs/OPTIMIZE_STAGE_ADAPTERS.md) for the
-contract. The control plane writes `state.json`,
-per-stage inputs/results/logs, command receipts, `receipt.json`, and
-`morning_report.md`. A kernel is promoted only when the final end-to-end run
+contract. The control plane writes `preflight.json`, `run_contract.json`,
+`state.json`, per-stage inputs/results/logs, command receipts, `receipt.json`,
+and `morning_report.md`. A kernel is promoted only when the final end-to-end run
 meets the configured threshold; an isolated benchmark can never promote it.
 The built-in adapters still run inside stage subprocesses. They fail closed on
 missing FastVideo outputs, malformed metadata, absent benchmark evidence,
@@ -483,6 +514,8 @@ motionkernel/
                         structured generation results and parity checks
   autokernel/discovery/ discovery report schema, FX capture, profiler
                         ingestion, timing correlation, impact ranking
+  autokernel/optimize/  campaign control plane: fail-closed preflight and
+                        immutable run contract, durable state, stage adapters
 
   campaign.py           validate, rank, prepare, and run campaigns
   workload.py           validate and A/B-run FastVideo workload manifests

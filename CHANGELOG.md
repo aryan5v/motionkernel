@@ -2,6 +2,28 @@
 
 ## Unreleased (downstream)
 
+- Added a fail-closed preflight phase and an immutable run contract to the
+  optimize control plane (`autokernel/optimize/preflight.py`). Preflight runs
+  before any stage or campaign-state mutation and validates the FastVideo
+  checkout structure, workload schema, atomic output writability, stage command
+  names/placeholders/executables, the resolved search-agent executable, the
+  repository entry points the adapters invoke, and every numeric budget,
+  threshold, and timeout. `optimize.py --preflight-only` writes the report and
+  exits without running a stage or creating campaign state. The versioned
+  `preflight.json` records pass/fail, stable reason codes, MotionKernel and
+  FastVideo commit identities, workload identity and SHA-256, and the execution
+  policy; command configurations are persisted only as SHA-256 digests plus a
+  program basename, so no credential, prompt, or raw argument is ever stored.
+  A campaign additionally pins its material configuration into a write-once
+  `run_contract.json`, and every resume fails closed with a stable
+  `contract_mismatch_*` code when the model, workload content, FastVideo
+  checkout, baseline, promotion threshold, stage commands, search-agent
+  command, or budget policy differs. Workload drift is detected by content
+  hash rather than path, and a checkout is identified by its git commit when
+  one is resolvable, so a moved checkout resumes while a changed commit does
+  not. Resuming a campaign whose contract is missing or unreadable also fails
+  closed.
+
 - Ranking now distinguishes an unsafe timed parent module from a validated
   executable subregion inside its export graph. High-impact parents are
   search-worthy only when the unchanged spec-generation safety boundary can
