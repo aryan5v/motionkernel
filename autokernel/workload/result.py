@@ -12,12 +12,24 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from autokernel._io import write_json_atomic
+
 from ._validate import (
     finite_number,
+)
+from ._validate import (
     mapping as _mapping_base,
+)
+from ._validate import (
     non_negative_int as _non_negative_int_base,
+)
+from ._validate import (
     optional_text as _optional_text_base,
+)
+from ._validate import (
     positive_int as _positive_int_base,
+)
+from ._validate import (
     text as _text_base,
 )
 from .types import FORBIDDEN_METADATA_KEYS, WorkloadError
@@ -330,13 +342,7 @@ def write_generation_result(
     result: GenerationRunResult, path: str | Path
 ) -> None:
     """Atomically write a generation result JSON file."""
-    output = Path(path)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    temporary = output.with_suffix(output.suffix + ".tmp")
-    temporary.write_text(
-        json.dumps(result.as_dict(), indent=2) + "\n", encoding="utf-8"
-    )
-    temporary.replace(output)
+    write_json_atomic(path, result.as_dict())
 
 
 def compare_frame_outputs(

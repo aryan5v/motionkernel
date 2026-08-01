@@ -16,6 +16,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from autokernel._io import write_json_atomic
+
 from .result import (
     GenerationRunResult,
     classify_end_to_end,
@@ -105,10 +107,7 @@ def _read_state(path: Path) -> dict[str, Any]:
 
 
 def _write_state(path: Path, state: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
-    temporary.replace(path)
+    write_json_atomic(path, state)
 
 
 def resolve_launcher(
@@ -379,13 +378,7 @@ def run_ab(
                 comparison["reason"] = (
                     f"output parity failed: {parity['reason']}"
                 )
-            temporary = paths.comparison_path.with_suffix(
-                paths.comparison_path.suffix + ".tmp"
-            )
-            temporary.write_text(
-                json.dumps(comparison, indent=2) + "\n", encoding="utf-8"
-            )
-            temporary.replace(paths.comparison_path)
+            write_json_atomic(paths.comparison_path, comparison)
             completed.add("compare")
             state["completed_stages"] = sorted(completed)
             _write_state(paths.state_path, state)

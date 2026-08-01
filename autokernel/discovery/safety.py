@@ -76,9 +76,8 @@ def normalize_op_name(op_name: str) -> str:
     # Strip schema overloads: aten::add.Tensor -> aten::add
     if "." in name and name.startswith("aten::"):
         base, _sep, _rest = name.partition(".")
-        # Keep dtype/device markers that use a single segment after :: only when
-        # they are overload names (add.Tensor). Nested module names stay intact.
-        if _rest and "." not in base:
+        # ATen text after the first dot is a schema overload (e.g. add.Tensor).
+        if _rest:
             name = base
     return name
 

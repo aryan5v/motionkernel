@@ -534,25 +534,12 @@ def capture_module_region(
     for reason in structural:
         breaks.append(GraphBreakRecord(scope=name, reason=reason, count=1))
 
-    if not operations:
-        breaks.append(
-            GraphBreakRecord(scope=name, reason="empty_graph", count=1)
-        )
-        return CaptureResult(
-            None,
-            tuple(breaks),
-            tuple(unsupported),
-            (),
-            capture_mode=capture_mode,
-            mode_failures=tuple(mode_failures),
-        )
-
     safe_constants = _sanitize_safe_constants(safe_constants)
     rejection = list(reject_region(operations))
     # Nested module / structural reasons already in breaks; fold into rejection.
     for item in breaks:
         if item.reason not in rejection and not item.reason.startswith(
-            "fx_trace_failed"
+            ("fx_trace_failed", "capture_failed:")
         ):
             rejection.append(item.reason)
 
@@ -601,7 +588,7 @@ def capture_module_region(
         breaks.append(
             GraphBreakRecord(
                 scope=name,
-                reason=f"output_meta_failed: {type(exc).__name__}: {exc}",
+                reason=f"output_meta_failed:{type(exc).__name__}",
                 count=1,
             )
         )

@@ -87,6 +87,28 @@ def test_campaign_rejects_content_hidden_in_attributes(fixtures_dir):
         OptimizationCampaign.from_dict(payload)
 
 
+@pytest.mark.parametrize("section", ["producer", "workload", "environment"])
+def test_campaign_rejects_content_hidden_in_top_level_metadata(
+    fixtures_dir,
+    section,
+):
+    payload = json.loads(
+        (fixtures_dir / "wan_campaign.json").read_text(encoding="utf-8")
+    )
+    payload[section]["nested"] = {"token": "do not persist me"}
+    with pytest.raises(CampaignError, match="content or secret fields"):
+        OptimizationCampaign.from_dict(payload)
+
+
+def test_campaign_rejects_activations_in_attributes(fixtures_dir):
+    payload = json.loads(
+        (fixtures_dir / "wan_campaign.json").read_text(encoding="utf-8")
+    )
+    payload["targets"][0]["attributes"]["activations"] = [0.25]
+    with pytest.raises(CampaignError, match="content or secret fields"):
+        OptimizationCampaign.from_dict(payload)
+
+
 def test_write_plan_bridges_to_existing_orchestrator(fixtures_dir, tmp_path):
     campaign = load_campaign(fixtures_dir / "wan_campaign.json")
     output = tmp_path / "optimization_plan.json"
