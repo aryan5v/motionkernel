@@ -15,6 +15,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from autokernel._io import write_json_atomic, write_text_atomic
+
 CAMPAIGN_SCHEMA_VERSION = 1
 
 _TOP_LEVEL_FIELDS = {
@@ -55,6 +57,7 @@ _TENSOR_FIELDS = {
 _TARGET_KINDS = {"operator", "fusion", "graph_fragment"}
 _OPERATION_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _FORBIDDEN_METADATA_KEYS = {
+    "activations",
     "credential",
     "credentials",
     "data",
@@ -480,17 +483,29 @@ class OptimizationCampaign:
                 f"unsupported version {version}; expected {CAMPAIGN_SCHEMA_VERSION}",
             )
         producer = dict(
-            _mapping(raw.get("producer"), source, "producer", non_empty=True)
+            _metadata_value(
+                _mapping(raw.get("producer"), source, "producer", non_empty=True),
+                source,
+                "producer",
+            )
         )
         workload = dict(
-            _mapping(raw.get("workload"), source, "workload", non_empty=True)
+            _metadata_value(
+                _mapping(raw.get("workload"), source, "workload", non_empty=True),
+                source,
+                "workload",
+            )
         )
         environment = dict(
-            _mapping(
-                raw.get("environment"),
+            _metadata_value(
+                _mapping(
+                    raw.get("environment"),
+                    source,
+                    "environment",
+                    non_empty=True,
+                ),
                 source,
                 "environment",
-                non_empty=True,
             )
         )
         for location, mapping, required in (
@@ -617,11 +632,7 @@ def write_optimization_plan(
         "environment": dict(campaign.environment),
         "kernels_to_optimize": kernels,
     }
-    output = Path(path)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    temporary = output.with_suffix(output.suffix + ".tmp")
-    temporary.write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8")
-    temporary.replace(output)
+    write_json_atomic(path, plan)
     return plan
 
 
@@ -686,12 +697,10 @@ def prepare_campaign(
                 "spec does not declare a Triton starter kernel",
             )
         destination = Path(entry["file"])
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        temporary = destination.with_suffix(destination.suffix + ".tmp")
-        temporary.write_text(
-            starter.read_text(encoding="utf-8"), encoding="utf-8"
+        write_text_atomic(
+            destination,
+            starter.read_text(encoding="utf-8"),
         )
-        temporary.replace(destination)
         prepared.append(
             {
                 "rank": entry["rank"],
@@ -712,9 +721,5 @@ def prepare_campaign(
         "next_command": "Follow program.md with orchestrate.py next and bench.py",
     }
     receipt_path = workspace / "campaign_receipt.json"
-    temporary = receipt_path.with_suffix(".json.tmp")
-    temporary.write_text(
-        json.dumps(receipt, indent=2) + "\n", encoding="utf-8"
-    )
-    temporary.replace(receipt_path)
+    write_json_atomic(receipt_path, receipt)
     return receipt

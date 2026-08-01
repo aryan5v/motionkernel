@@ -454,6 +454,33 @@ def test_failure_diagnostics_never_serialize_raw_exception_text(monkeypatch):
     assert "source_code" not in serialized
 
 
+def test_output_metadata_failure_never_serializes_raw_exception_text(
+    monkeypatch,
+):
+    def fail_with_sensitive_text(*args, **kwargs):
+        raise RuntimeError(
+            "prompt=private customer text token=secret source_code=hidden"
+        )
+
+    monkeypatch.setattr(
+        fx_capture,
+        "_output_tensor_examples",
+        fail_with_sensitive_text,
+    )
+    result = capture_module_region(
+        _PureBlock(),
+        (torch.randn(2, 8), torch.randn(2, 8)),
+        name="test.safe_output_failure",
+    )
+
+    serialized = str([item.as_dict() for item in result.graph_breaks])
+    assert result.region is not None
+    assert "output_meta_failed:RuntimeError" in serialized
+    assert "private customer" not in serialized
+    assert "secret" not in serialized
+    assert "source_code" not in serialized
+
+
 def test_session_register_explicit_module():
     block = _PureBlock()
     session = RegionCaptureSession(name_prefix="leaf")

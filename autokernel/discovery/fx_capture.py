@@ -588,7 +588,7 @@ def capture_module_region(
         breaks.append(
             GraphBreakRecord(
                 scope=name,
-                reason=f"output_meta_failed: {type(exc).__name__}: {exc}",
+                reason=f"output_meta_failed:{type(exc).__name__}",
                 count=1,
             )
         )
