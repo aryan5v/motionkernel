@@ -210,6 +210,7 @@ def test_derivation_isolates_allowlisted_component_with_explicit_boundary() -> N
     assert [item.name for item in derived.ir.inputs] == ["input_0"]
     assert derived.ir.inputs[0].meta.shape == (2, 4)
     assert derived.parent_cuda_time_us == 1000.0
+    assert derived.parent_module == "transformer.blocks"
 
 
 def test_derivation_preserves_custom_op_identity_but_excludes_it() -> None:
@@ -514,6 +515,7 @@ def test_generated_manifest_builds_subgraph_dispatch_contract() -> None:
 
     assert contract["operation"]["target_kind"] == "subgraph"
     assert contract["operation"]["graph_fingerprint"] == region.fingerprint
+    assert contract["operation"]["parent_module"] == "transformer.blocks"
     assert contract["operation"]["boundary_refs"] == manifest["boundary_refs"]
     assert contract["signature"]["inputs"]
     assert contract["signature"]["outputs"]

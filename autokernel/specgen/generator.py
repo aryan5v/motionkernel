@@ -34,6 +34,7 @@ class DerivedSubregion:
 
     ir: ExecutableIR
     parent_name: str
+    parent_module: str
     parent_fingerprint: str
     parent_cuda_time_us: float
     parent_self_cuda_time_us: float
@@ -203,6 +204,7 @@ def derive_safe_subregion(region: GraphRegion) -> DerivedSubregion:
     return DerivedSubregion(
         ir=selected_ir,
         parent_name=region.name,
+        parent_module=region.parent_module or region.name,
         parent_fingerprint=region.fingerprint,
         parent_cuda_time_us=region.cuda_time_us,
         parent_self_cuda_time_us=region.self_cuda_time_us,
@@ -370,6 +372,7 @@ def build_manifest(region: GraphRegion) -> dict[str, Any]:
         "name": _safe_operation_name(region),
         "parent": {
             "name": derived.parent_name,
+            "module": derived.parent_module,
             "fingerprint": derived.parent_fingerprint,
             "cuda_time_us": derived.parent_cuda_time_us,
             "self_cuda_time_us": derived.parent_self_cuda_time_us,
@@ -400,6 +403,9 @@ def build_dispatch_contract(manifest_value: Mapping[str, Any]) -> dict[str, Any]
         raise SpecGenerationError("generated manifest parent must be an object")
     if parent.get("capture_mode") != "export":
         raise SpecGenerationError("subgraph dispatch requires an export capture")
+    parent_module = parent.get("module")
+    if not isinstance(parent_module, str) or not parent_module:
+        raise SpecGenerationError("generated manifest parent module is missing")
     selected = tuple(manifest.get("selected_node_ids") or ())
     boundaries = tuple(manifest.get("boundary_refs") or ())
     outputs = tuple(manifest.get("output_node_ids") or ())
@@ -442,7 +448,7 @@ def build_dispatch_contract(manifest_value: Mapping[str, Any]) -> dict[str, Any]
         "operation": {
             "name": str(manifest.get("name", "")),
             "graph_fingerprint": str(parent.get("fingerprint", "")),
-            "parent_module": str(parent.get("name", "")),
+            "parent_module": parent_module,
             "operations": operations,
             "target_kind": "subgraph",
             "capture_mode": "export",
