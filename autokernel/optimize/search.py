@@ -25,6 +25,10 @@ from autokernel.specgen import (
     spec_from_manifest,
     write_runtime_adapter,
 )
+from autokernel.discovery.ranking import (
+    measured_e2e_improvement,
+    projected_end_to_end_speedup,
+)
 from autokernel.verification.policy import ParityPolicy
 from autokernel.workload import load_workload
 
@@ -188,11 +192,22 @@ def _agent_prompt(
     generated: Mapping[str, Path],
     benchmark: Sequence[str],
 ) -> str:
+    # Discovery emits ``estimated_max_e2e_improvement`` as a fraction. The
+    # prompt used to read ``estimated_max_e2e_improvement_pct``, a key nothing
+    # ever wrote, so every r4 search agent was told its target was worth
+    # "None%". Label the number for what it is: an upper bound that assumes the
+    # region's cost drops to nearly zero, not a measurement.
+    share = float(candidate.get("share_of_e2e") or 0.0)
+    upper_bound = float(candidate.get("estimated_max_e2e_improvement") or 0.0)
     return f"""\
 Optimize one graph-derived CUDA kernel autonomously. Do not ask questions.
 
 Target fingerprint: {candidate.get('fingerprint')}
-Measured optimistic model impact: {candidate.get('estimated_max_e2e_improvement_pct')}%
+Region share of end-to-end CUDA time: {share * 100:.3f}%
+Upper-bound model impact if this region became free: {upper_bound * 100:.3f}%
+(That bound is not achievable. A kernel measuring Nx faster returns
+share * (1 - 1/N) of end-to-end; at 1.10x on this region that is
+{share * (1 - 1 / 1.10) * 100:.3f}%.)
 Editable file: {generated['kernel']}
 Read-only semantic inputs: {generated['manifest']}, {generated['spec']}, {generated['corpus']}
 
@@ -446,6 +461,14 @@ def validate_candidates(
     baseline = str(config.get("baseline") or "eager")
     parity_policy, max_absolute_error = _parity_settings(config)
     workload = load_workload(Path(str(config["workload"])))
+    # The campaign's end-to-end gate, applied per candidate at package time
+    # rather than only after a full A/B generation pair has been spent.
+    min_end_to_end_speedup = float(
+        config.get("min_end_to_end_speedup")
+        or getattr(workload.performance, "min_end_to_end_speedup", 1.0)
+        or 1.0
+    )
+    dispatch_overhead = float(config.get("dispatch_overhead_fraction") or 0.0)
     budget_value = config.get("per_candidate_budget_seconds")
     per_candidate_budget = (
         float(budget_value) if budget_value is not None else None
@@ -482,6 +505,30 @@ def validate_candidates(
             speedup = float(primary["speedup_vs_pytorch"])
             if speedup <= 1.0:
                 raise BuiltinSearchError("candidate did not beat the isolated reference")
+
+            # An isolated micro-speedup is not an end-to-end improvement. Now
+            # that the kernel has been measured, replace discovery's optimistic
+            # upper bound with what this speedup actually returns on this
+            # region's share of the model, and require that it clear the
+            # campaign's gate with dispatch overhead charged against it.
+            share = float(candidate.get("share_of_e2e") or 0.0)
+            realized = measured_e2e_improvement(share, speedup)
+            projected = projected_end_to_end_speedup(
+                [realized], dispatch_overhead_fraction=dispatch_overhead
+            )
+            if projected < min_end_to_end_speedup:
+                optimistic = float(
+                    candidate.get("estimated_max_e2e_improvement") or 0.0
+                )
+                raise BuiltinSearchError(
+                    f"candidate cannot reach the campaign's end-to-end target: "
+                    f"region is {share * 100:.3f}% of end-to-end and measured "
+                    f"{speedup:.4f}x, returning {realized * 100:.3f}% "
+                    f"(projected {projected:.5f}x < required "
+                    f"{min_end_to_end_speedup:.5f}x). Discovery's upper bound "
+                    f"of {optimistic * 100:.3f}% assumed the region's cost "
+                    f"dropped to nearly zero"
+                )
             architecture = _gpu_architecture(payload)
             manifest_value = json.loads(
                 generated["manifest"].read_text(encoding="utf-8")
@@ -528,6 +575,15 @@ def validate_candidates(
                         "baseline_us": float(primary["pytorch_latency_us"]),
                         "candidate_us": float(primary["kernel_latency_us"]),
                         "speedup": speedup,
+                        # What this isolated speedup is worth on the whole
+                        # model, so a reader never has to reconstruct it from
+                        # a region share and an upper bound again.
+                        "region_share_of_e2e": share,
+                        "measured_e2e_improvement": realized,
+                        "projected_end_to_end_speedup": projected,
+                        "min_end_to_end_speedup": min_end_to_end_speedup,
+                        "dispatch_overhead_fraction": dispatch_overhead,
+                        "parity_policy": parity_policy,
                         "max_abs_error": max_abs,
                         "max_rel_error": max_rel,
                         "atol": tolerance.atol,

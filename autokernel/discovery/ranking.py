@@ -60,9 +60,23 @@ class RankedCandidate:
 
 
 def e2e_share(cuda_time_us: float, total_cuda_time_us: float) -> float:
+    """Fraction of end-to-end CUDA time attributable to one region.
+
+    Clamped to 1.0. A region cannot occupy more than the whole model, but the
+    inputs can say otherwise: attributed time sums inclusive record_function
+    ranges while the total sums exclusive operator time, so nested or
+    overlapping ranges can push the numerator past the denominator. Run r4
+    reported share_of_e2e = 1.0333 for transformer.model.transformer_blocks
+    (2864051.95us attributed against a 2771790.13us total), which fed an
+    "optimistic improvement" of 93% of end-to-end into candidate ranking.
+
+    Clamping keeps the ratio interpretable; it does not make an over-attributed
+    region trustworthy, which is why measured_e2e_improvement supersedes this
+    estimate as soon as a kernel has actually been benchmarked.
+    """
     if total_cuda_time_us <= 0:
         return 0.0
-    return max(0.0, float(cuda_time_us) / float(total_cuda_time_us))
+    return min(1.0, max(0.0, float(cuda_time_us) / float(total_cuda_time_us)))
 
 
 def optimistic_e2e_improvement(
@@ -78,6 +92,61 @@ def optimistic_e2e_improvement(
     if reducible_fraction < 0.0 or reducible_fraction > 1.0:
         raise ValueError("reducible_fraction must be in [0, 1]")
     return max(0.0, share * reducible_fraction)
+
+
+def measured_e2e_improvement(share: float, measured_speedup: float) -> float:
+    """End-to-end gain a region actually delivers at ``measured_speedup``.
+
+    :func:`optimistic_e2e_improvement` answers "is this region worth searching
+    at all", assuming the kernel's cost drops to nearly zero. Once a kernel has
+    been benchmarked that assumption is no longer needed, and keeping it is
+    actively misleading: a region that is 2.3% of end-to-end running 1.115x
+    faster returns ``0.023 * (1 - 1/1.115)`` = 0.24% of end-to-end, not the
+    2.1% the upper bound predicted -- an order of magnitude apart.
+
+    Run r4 packaged four VAE artifacts on the strength of the upper bound. Their
+    measured speedups summed to 0.63% of end-to-end against a 1% campaign
+    target, so no combination of them could ever have passed, and the run spent
+    a full A/B generation pair discovering that.
+    """
+    if measured_speedup <= 0.0:
+        raise ValueError("measured_speedup must be positive")
+    if measured_speedup <= 1.0:
+        return 0.0
+    return max(0.0, share * (1.0 - 1.0 / measured_speedup))
+
+
+def projected_end_to_end_speedup(
+    improvements: Sequence[float],
+    *,
+    dispatch_overhead_fraction: float = 0.0,
+) -> float:
+    """Combine per-region end-to-end gains into a projected model speedup.
+
+    Regions are assumed disjoint, so their fractional savings add. Dispatch
+    overhead is charged against the total: every replaced region pays for graph
+    matching, parameter materialization and an extra Python frame per call, and
+    a candidate whose savings do not exceed that cost is a regression however
+    good its isolated benchmark looked.
+    """
+    total = sum(max(0.0, value) for value in improvements)
+    net = total - max(0.0, dispatch_overhead_fraction)
+    if net >= 1.0:  # pragma: no cover - defensive
+        raise ValueError("combined improvement cannot reach 100% of end-to-end")
+    return 1.0 / (1.0 - net)
+
+
+def meets_end_to_end_target(
+    improvements: Sequence[float],
+    *,
+    min_end_to_end_speedup: float,
+    dispatch_overhead_fraction: float = 0.0,
+) -> bool:
+    """Whether measured savings can reach the campaign's speedup gate."""
+    projected = projected_end_to_end_speedup(
+        improvements, dispatch_overhead_fraction=dispatch_overhead_fraction
+    )
+    return projected >= min_end_to_end_speedup
 
 
 def _probe_safe_subregion(region: GraphRegion) -> tuple[int | None, str | None]:
