@@ -7,8 +7,9 @@ import os
 import subprocess
 import sys
 import time
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 from .state import (
     OptimizeError,
@@ -208,6 +209,8 @@ def run_stage(
     if (
         stage in {"search", "isolated_validate"}
         and config.per_candidate_budget_seconds is not None
+        and config.stage_commands
+        and stage in config.stage_commands
         and (timeout is None or config.per_candidate_budget_seconds < timeout)
     ):
         timeout = config.per_candidate_budget_seconds

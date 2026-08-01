@@ -14,6 +14,7 @@ import math
 import shutil
 import subprocess
 import sys
+import time
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
@@ -29,6 +30,10 @@ from autokernel.workload import load_workload
 
 class BuiltinSearchError(RuntimeError):
     """Search or isolated validation could not satisfy its contract."""
+
+
+def _remaining(deadline: float | None) -> float | None:
+    return None if deadline is None else deadline - time.monotonic()
 
 
 def _generated(candidate: Mapping[str, Any]) -> dict[str, Path]:
@@ -82,6 +87,7 @@ def _run_benchmark(
     *,
     baseline: str,
     quick: bool,
+    timeout: float | None = None,
 ) -> dict[str, Any]:
     result_path.parent.mkdir(parents=True, exist_ok=True)
     command = _benchmark_command(
@@ -91,13 +97,22 @@ def _run_benchmark(
         baseline=baseline,
         quick=quick,
     )
-    completed = subprocess.run(
-        command,
-        cwd=generated["kernel"].parent,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=generated["kernel"].parent,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=max(timeout, 0.001) if timeout is not None else None,
+        )
+    except subprocess.TimeoutExpired as exc:
+        stdout = exc.stdout.decode(errors="replace") if isinstance(exc.stdout, bytes) else (exc.stdout or "")
+        stderr = exc.stderr.decode(errors="replace") if isinstance(exc.stderr, bytes) else (exc.stderr or "")
+        log_path.write_text(stdout + stderr, encoding="utf-8")
+        raise BuiltinSearchError(
+            "per-candidate budget exhausted during benchmark"
+        ) from exc
     log_path.write_text(
         (completed.stdout or "") + (completed.stderr or ""), encoding="utf-8"
     )
@@ -209,12 +224,22 @@ def search_candidates(
     configured = config.get("search_agent_command")
     if configured is not None and not isinstance(configured, list):
         raise BuiltinSearchError("search_agent_command must be an argv list")
+    budget_value = config.get("per_candidate_budget_seconds")
+    per_candidate_budget = (
+        float(budget_value) if budget_value is not None else None
+    )
 
     stage_dir = run_dir / "stages" / "search"
     searched: list[dict[str, Any]] = []
     failures: list[dict[str, str]] = []
     measured_count = 0
     for candidate in candidates:
+        deadline = (
+            time.monotonic() + per_candidate_budget
+            if per_candidate_budget is not None
+            else None
+        )
+
         generated = _generated(candidate)
         fingerprint = str(candidate.get("fingerprint") or "unknown")
         work = stage_dir / fingerprint
@@ -242,13 +267,34 @@ def search_candidates(
                 prompt_path=prompt_path,
                 last_message=last_message,
             )
-            completed = subprocess.run(
-                command,
-                cwd=repo_root,
-                text=True,
-                capture_output=True,
-                check=False,
-            )
+            try:
+                completed = subprocess.run(
+                    command,
+                    cwd=repo_root,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                    timeout=(
+                        max(_remaining(deadline), 0.001)
+                        if _remaining(deadline) is not None
+                        else None
+                    ),
+                )
+            except subprocess.TimeoutExpired as exc:
+                stdout = (
+                    exc.stdout.decode(errors="replace")
+                    if isinstance(exc.stdout, bytes)
+                    else (exc.stdout or "")
+                )
+                stderr = (
+                    exc.stderr.decode(errors="replace")
+                    if isinstance(exc.stderr, bytes)
+                    else (exc.stderr or "")
+                )
+                log_path.write_text(stdout + stderr, encoding="utf-8")
+                raise BuiltinSearchError(
+                    "per-candidate budget exhausted during agent search"
+                ) from exc
             log_path.write_text(
                 (completed.stdout or "") + (completed.stderr or ""),
                 encoding="utf-8",
@@ -264,6 +310,7 @@ def search_candidates(
                 work / "benchmark.log",
                 baseline=baseline,
                 quick=True,
+                timeout=_remaining(deadline),
             )
             measured_count += 1
             primary = _primary(payload)
@@ -352,6 +399,10 @@ def validate_candidates(
     repo_root = Path(str(config.get("repo_root") or Path(__file__).parents[2])).resolve()
     baseline = str(config.get("baseline") or "eager")
     workload = load_workload(Path(str(config["workload"])))
+    budget_value = config.get("per_candidate_budget_seconds")
+    per_candidate_budget = (
+        float(budget_value) if budget_value is not None else None
+    )
     stage_dir = run_dir / "stages" / "isolated_validate"
     validated: list[dict[str, Any]] = []
     requests: list[dict[str, Any]] = []
@@ -372,6 +423,7 @@ def validate_candidates(
                 work / "benchmark.log",
                 baseline=baseline,
                 quick=False,
+                timeout=per_candidate_budget,
             )
             measured_count += 1
             forward = payload.get("forward")

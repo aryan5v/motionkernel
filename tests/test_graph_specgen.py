@@ -247,6 +247,41 @@ def test_derivation_returns_selected_values_used_outside_component() -> None:
     assert derived.output_node_ids == ("updated", "negative")
 
 
+def test_derivation_does_not_span_an_unsupported_topological_gap() -> None:
+    ir = _ir(
+        [_input("x", (2, 3)), _input("weight", (3, 3))],
+        [
+            _node(
+                "early",
+                "aten.neg.default",
+                [_ref("x")],
+                meta=_meta((2, 3)),
+            ),
+            _node(
+                "gap",
+                "aten.mm.default",
+                [_ref("early"), _ref("weight")],
+                meta=_meta((2, 3)),
+            ),
+            _node(
+                "late",
+                "aten.add.Tensor",
+                [_ref("early"), _ref("gap")],
+                meta=_meta((2, 3)),
+            ),
+        ],
+        [_ref("late")],
+    )
+
+    derived = derive_safe_subregion(
+        _region_for(ir, ["aten::neg", "aten::mm", "aten::add"])
+    )
+
+    assert derived.selected_node_ids == ("early",)
+    assert derived.boundary_refs == ("x",)
+    assert derived.output_node_ids == ("early",)
+
+
 def test_derivation_preserves_custom_op_identity_but_excludes_it() -> None:
     ir = _ir(
         [_input("x", (2, 3))],

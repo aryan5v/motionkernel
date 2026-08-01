@@ -101,29 +101,24 @@ def derive_safe_subregion(region: GraphRegion) -> DerivedSubregion:
                 f"does not match operation {operation!r}"
             )
 
-    # Connected components over data dependencies among allowlisted nodes.
-    adjacency = {node_id: set() for node_id in allowed}
-    for node in ir.nodes:
-        if node.id not in allowed:
-            continue
-        for ref in node.refs():
-            if ref in allowed:
-                adjacency[node.id].add(ref)
-                adjacency[ref].add(node.id)
+    # A replacement is one call at one point in the parent FX graph. Merely
+    # being connected through data dependencies is insufficient: an
+    # allowlisted component can span unsupported operations and require a
+    # boundary value that is produced after an early selected result is
+    # already consumed. Such scattered islands have no legal insertion point.
+    # Consecutive allowlisted runs are topologically closed intervals: every
+    # external input precedes the run and every external user follows it.
     components: list[set[str]] = []
-    unseen = set(allowed)
-    while unseen:
-        root = min(unseen)
-        stack = [root]
-        component: set[str] = set()
-        while stack:
-            current = stack.pop()
-            if current in component:
-                continue
-            component.add(current)
-            stack.extend(adjacency[current] - component)
-        unseen -= component
-        components.append(component)
+    current: set[str] = set()
+    for node in ir.nodes:
+        if node.id in allowed:
+            current.add(node.id)
+            continue
+        if current:
+            components.append(current)
+            current = set()
+    if current:
+        components.append(current)
 
     node_by_id = {node.id: node for node in ir.nodes}
     metadata = _meta_by_id(ir)
