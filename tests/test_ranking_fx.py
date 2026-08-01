@@ -144,11 +144,11 @@ def test_rank_regions_salvages_validated_subgraph_from_unsafe_export_parent():
 def test_rank_regions_keeps_unsafe_parent_rejected_when_derivation_fails():
     region = GraphRegion.build(
         name="transformer.blocks.invalid_export",
-        operations=["aten::linear"],
+        operations=["aten::convolution"],
         inputs=[TensorMeta("x", (2, 8), (8, 1), "float32", "cpu")],
         cuda_time_us=8_000.0,
         self_cuda_time_us=8_000.0,
-        rejection_reasons=("aten::linear: not in pure-tensor allowlist",),
+        rejection_reasons=("aten::convolution: not in pure-tensor allowlist",),
         attributes={"capture_mode": "export", "executable_ir": {"schema_version": 1}},
     )
 
