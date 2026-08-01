@@ -459,5 +459,36 @@ MotionKernel:
   tensor signatures, safe scalars only, graph breaks, unsupported ops, stable
   fingerprints, fail-closed mutation/collective/aliasing rejection. Metadata
   only — no weights, prompts, tensor values, or source.
-- Next framework wall: correlate captured FX regions with measured profiler
-  hotspots and generate searchable `KernelSpec` objects.
+- Repeated-module capture now tries symbolic FX, non-strict `torch.export`,
+  then Dynamo. Reports retain the successful mode and sanitized failure reason
+  for every attempted mode. FastVideo replays only the bounded attention
+  context needed for capture, temporarily exposes compiler-disabled attention
+  and layer-offloaded forwards, and restores the exact wrapper, parameter, and
+  offload-cache state afterward.
+- CPU contracts cover all three modes, fingerprint stability, fail-closed
+  rejection, metadata privacy, offload-state restoration, attention-context
+  replay, and empty profiler shapes. MotionKernel: 474 passed, 10 GPU tests
+  deselected. FastVideo optimization integration: 31 passed.
+- Wan GB200 validation job 920 captured the dominant
+  `transformer.blocks` scope through export: one 158-operation region over 240
+  observed block calls, fingerprint `6eb75dfd6794c59ac6e3d0010a96f4a4`.
+  Offline correlation with commit `e743a45` attributed 3.311 seconds of self
+  CUDA time (83.8931% of measured CUDA) and ranked it first. Capture-mode
+  breakdown: 17 symbolic, 1 export, 0 Dynamo (18 regions total). Clean median
+  wall time was 3.8560 seconds with 30,734.01 MiB peak allocated CUDA memory.
+- The whole Wan block remains correctly rejected as a directly executable
+  search candidate because it contains attention, in-place mutation, and
+  operations outside the pure-tensor allowlist. Workstream 4 must derive a
+  validated allowlisted subregion rather than weakening that safety gate.
+- LTX GB200 validation job 923 completed cleanly with 59 captured regions:
+  35 symbolic, 24 export, 0 Dynamo. Median wall time was 4.4961 seconds with
+  67,804.14 MiB peak allocated CUDA memory. The dominant
+  `transformer.model.transformer_blocks` scope remains a graph break:
+  symbolic reported dynamic Python control flow, export reported
+  `unsupported_graph:ValueError`, and Dynamo reported
+  `trace_error:Unsupported`. This residual LTX capture gap is recorded rather
+  than hidden; Task 1 passes its stated GPU exit criterion through Wan.
+- The next framework wall is graph-derived `KernelSpec` generation from
+  validated ranked regions. Because the top Wan region is a whole block with
+  rejected operations, Workstream 4 must include safe allowlisted subregion
+  derivation or explicitly conclude that the region cannot yet be specified.

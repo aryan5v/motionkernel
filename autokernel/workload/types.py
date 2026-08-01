@@ -19,6 +19,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from autokernel._io import write_text_atomic
+
 WORKLOAD_SCHEMA_VERSION = 1
 
 _TOP_LEVEL_FIELDS = {
@@ -878,6 +880,4 @@ def dump_workload(
         text = json.dumps(payload, indent=2) + "\n"
     else:
         raise WorkloadError(f"unsupported dump format {format_name!r}")
-    temporary = output.with_suffix(output.suffix + ".tmp")
-    temporary.write_text(text, encoding="utf-8")
-    temporary.replace(output)
+    write_text_atomic(output, text)

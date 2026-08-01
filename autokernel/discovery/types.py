@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from autokernel._io import write_json_atomic
+
 from .fingerprint import graph_fingerprint
 
 DISCOVERY_SCHEMA_VERSION = 1
@@ -843,10 +845,4 @@ def load_discovery_report(path: str | Path) -> DiscoveryReport:
 
 def write_discovery_report(report: DiscoveryReport, path: str | Path) -> None:
     """Atomically write a discovery report."""
-    output = Path(path)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    temporary = output.with_suffix(output.suffix + ".tmp")
-    temporary.write_text(
-        json.dumps(report.as_dict(), indent=2) + "\n", encoding="utf-8"
-    )
-    temporary.replace(output)
+    write_json_atomic(path, report.as_dict())
