@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from autokernel.optimize.adapters import ProductionAdapterError, run_production_stage
+from autokernel.optimize.search import _agent_command
 from autokernel.workload.launcher import build_launcher_command
 
 
@@ -60,6 +61,36 @@ def test_launcher_command_supports_dedicated_profile_output(tmp_path: Path):
     )
 
     assert command[-2:] == ["--profile-output", str(tmp_path / "profile.json")]
+
+
+def test_default_search_agent_sandboxes_the_editable_candidate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    repo_root = tmp_path / "motionkernel"
+    run_dir = tmp_path / "run"
+    candidate_dir = run_dir / "candidates" / ("a" * 32)
+    candidate_dir.mkdir(parents=True)
+    prompt = candidate_dir / "prompt.md"
+    prompt.write_text("optimize the candidate", encoding="utf-8")
+    last_message = candidate_dir / "last.md"
+    monkeypatch.setattr(
+        "autokernel.optimize.search.shutil.which",
+        lambda name: "/usr/bin/codex" if name == "codex" else None,
+    )
+
+    command = _agent_command(
+        None,
+        repo_root=repo_root,
+        run_dir=run_dir,
+        candidate_dir=candidate_dir,
+        prompt_path=prompt,
+        last_message=last_message,
+    )
+
+    assert command[command.index("-C") + 1] == str(candidate_dir)
+    assert command[command.index("-s") + 1] == "workspace-write"
+    assert str(repo_root) not in command
 
 
 def test_baseline_adapter_translates_generation_result(
