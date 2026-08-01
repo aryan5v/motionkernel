@@ -5,7 +5,8 @@
 - Added a fail-closed preflight phase and an immutable run contract to the
   optimize control plane (`autokernel/optimize/preflight.py`). Preflight runs
   before any stage or campaign-state mutation and validates the FastVideo
-  checkout structure, workload schema, atomic output writability, stage command
+  checkout structure, workload schema, atomic output writability and free disk
+  space, stage command
   names/placeholders/executables, the resolved search-agent executable, the
   repository entry points the adapters invoke, and every numeric budget,
   threshold, and timeout. `optimize.py --preflight-only` writes the report and
@@ -18,7 +19,10 @@
   `run_contract.json`, and every resume fails closed with a stable
   `contract_mismatch_*` code when the model, workload content, FastVideo
   checkout, baseline, promotion threshold, stage commands, search-agent
-  command, or budget policy differs. Workload drift is detected by content
+  command, or candidate timeout differs. `budget_hours` is deliberately an
+  invocation allowance rather than evidence identity: a non-terminal resume
+  may grant more time and receives a fresh wall-clock deadline without
+  changing the write-once contract. Workload drift is detected by content
   hash rather than path, and a checkout is identified by its git commit when
   one is resolvable, so a moved checkout resumes while a changed commit does
   not. Resuming a campaign whose contract is missing or unreadable also fails

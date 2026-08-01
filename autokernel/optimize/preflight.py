@@ -71,6 +71,8 @@ FASTVIDEO_REQUIRED_PATHS: tuple[str, ...] = (
 REPO_REQUIRED_FILES: tuple[str, ...] = ("bench.py",)
 
 _GIT_TIMEOUT_SECONDS = 10.0
+MIN_OUTPUT_FREE_BYTES = 512 * 1024**2
+WARN_OUTPUT_FREE_BYTES = 10 * 1024**3
 
 
 class PreflightError(OptimizeError):
@@ -398,15 +400,24 @@ def _check_workload(
     return record
 
 
-def _check_output(config: OptimizeConfig, report: PreflightReport) -> None:
+def _check_output(
+    config: OptimizeConfig, report: PreflightReport
+) -> dict[str, int | None]:
     """Validate the output directory can be created and atomically written."""
     output = config.output
+    storage: dict[str, int | None] = {
+        "total_bytes": None,
+        "used_bytes": None,
+        "free_bytes": None,
+        "minimum_free_bytes": MIN_OUTPUT_FREE_BYTES,
+        "warning_free_bytes": WARN_OUTPUT_FREE_BYTES,
+    }
     if output.exists() and not output.is_dir():
         report.error(
             "output_not_a_directory",
             f"output path exists and is not a directory: {output}",
         )
-        return
+        return storage
     try:
         output.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
@@ -414,9 +425,11 @@ def _check_output(config: OptimizeConfig, report: PreflightReport) -> None:
             "output_not_creatable",
             f"output directory could not be created: {output}: {exc}",
         )
-        return
+        return storage
     # Atomic writes replace a temporary file in the same directory, so probe
     # exactly that capability rather than merely testing os.access.
+    probe: Path | None = None
+    target = output / ".preflight.probe"
     try:
         with tempfile.NamedTemporaryFile(
             mode="w",
@@ -428,14 +441,51 @@ def _check_output(config: OptimizeConfig, report: PreflightReport) -> None:
         ) as handle:
             handle.write("preflight")
             probe = Path(handle.name)
-        target = output / ".preflight.probe"
         probe.replace(target)
-        target.unlink()
     except OSError as exc:
         report.error(
             "output_not_writable",
             f"output directory is not atomically writable: {output}: {exc}",
         )
+    finally:
+        for temporary in (probe, target):
+            if temporary is not None:
+                try:
+                    temporary.unlink(missing_ok=True)
+                except OSError:
+                    pass
+
+    try:
+        usage = shutil.disk_usage(output)
+    except OSError as exc:
+        report.warn(
+            "output_free_space_unknown",
+            "could not determine free space for the output directory",
+            error_type=type(exc).__name__,
+        )
+        return storage
+
+    storage.update(
+        total_bytes=usage.total,
+        used_bytes=usage.used,
+        free_bytes=usage.free,
+    )
+    if usage.free < MIN_OUTPUT_FREE_BYTES:
+        report.error(
+            "output_free_space_insufficient",
+            "output filesystem has less than 512 MiB free",
+            free_bytes=usage.free,
+            required_bytes=MIN_OUTPUT_FREE_BYTES,
+        )
+    elif usage.free < WARN_OUTPUT_FREE_BYTES:
+        report.warn(
+            "output_free_space_low",
+            "output filesystem has less than 10 GiB free; an overnight "
+            "campaign may exhaust it",
+            free_bytes=usage.free,
+            warning_bytes=WARN_OUTPUT_FREE_BYTES,
+        )
+    return storage
 
 
 def _check_stage_commands(
@@ -616,7 +666,14 @@ def _check_executables(
 
 def build_run_contract(sections: Mapping[str, Any]) -> dict[str, Any]:
     """Build the immutable contract payload from validated preflight sections."""
-    policy = dict(sections["policy"])
+    # Duration and resume mode are invocation controls, not evidence identity.
+    # Operators may grant an interrupted campaign more time without changing
+    # the model, code, workload, search policy, or promotion threshold.
+    policy = {
+        key: value
+        for key, value in sections["policy"].items()
+        if key not in {"budget_hours", "resume"}
+    }
     return {
         "schema_version": RUN_CONTRACT_SCHEMA_VERSION,
         "created_at": utc_now(),
@@ -652,7 +709,6 @@ CONTRACT_MISMATCH_CODES: dict[str, str] = {
     "baseline": "contract_mismatch_baseline",
     "min_e2e_speedup": "contract_mismatch_promotion_threshold",
     "per_candidate_budget_seconds": "contract_mismatch_candidate_timeout",
-    "budget_hours": "contract_mismatch_budget_policy",
     "artifact_dir_name": "contract_mismatch_artifact_dir",
     "stage_commands": "contract_mismatch_stage_commands",
     "search_agent": "contract_mismatch_search_agent_command",
@@ -710,7 +766,6 @@ def compare_run_contract(
         "baseline",
         "min_e2e_speedup",
         "per_candidate_budget_seconds",
-        "budget_hours",
         "artifact_dir_name",
     ):
         if stored_policy.get(key) != current_policy.get(key):
@@ -776,7 +831,7 @@ def execute_preflight(
     _check_policy(config, report)
     fastvideo = _check_fastvideo(config, report)
     workload = _check_workload(config, report)
-    _check_output(config, report)
+    output_storage = _check_output(config, report)
     _check_stage_commands(config, report)
     search_agent = _check_search_agent(config, report)
     executables = _check_executables(config, report)
@@ -803,6 +858,7 @@ def execute_preflight(
             key: value for key, value in search_agent.items() if key != "identity"
         },
         "environment": executables,
+        "output_storage": output_storage,
         "simulated": os.environ.get("MOTIONKERNEL_SIMULATE") == "1",
         "resuming": resuming,
     }

@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+import autokernel.optimize.preflight as preflight_module
 from autokernel.optimize import (
     PREFLIGHT_SCHEMA_VERSION,
     RUN_CONTRACT_SCHEMA_VERSION,
@@ -88,6 +89,51 @@ def test_preflight_passes_and_records_identity(
     assert payload["workload"]["sha256"]
     assert payload["policy"]["baseline"] == "eager"
     assert contract["schema_version"] == RUN_CONTRACT_SCHEMA_VERSION
+    assert "budget_hours" not in contract["policy"]
+    assert "resume" not in contract["policy"]
+
+
+def test_preflight_warns_when_output_space_is_low(
+    tmp_path: Path, repo_root: Path, monkeypatch: pytest.MonkeyPatch
+):
+    _simulate(monkeypatch)
+    monkeypatch.setattr(
+        preflight_module.shutil,
+        "disk_usage",
+        lambda _path: preflight_module.shutil._ntuple_diskusage(
+            20 * 1024**3,
+            19 * 1024**3,
+            1024**3,
+        ),
+    )
+
+    report, _ = _preflight(_config(tmp_path, repo_root))
+
+    assert report.passed
+    assert "output_free_space_low" in {
+        finding.code for finding in report.warnings
+    }
+    assert report.sections["output_storage"]["free_bytes"] == 1024**3
+
+
+def test_preflight_rejects_when_output_space_is_insufficient(
+    tmp_path: Path, repo_root: Path, monkeypatch: pytest.MonkeyPatch
+):
+    _simulate(monkeypatch)
+    monkeypatch.setattr(
+        preflight_module.shutil,
+        "disk_usage",
+        lambda _path: preflight_module.shutil._ntuple_diskusage(
+            20 * 1024**3,
+            20 * 1024**3 - 256 * 1024**2,
+            256 * 1024**2,
+        ),
+    )
+
+    report, _ = _preflight(_config(tmp_path, repo_root))
+
+    assert not report.passed
+    assert _codes(report) == {"output_free_space_insufficient"}
 
 
 def test_preflight_only_writes_report_without_campaign_state(
@@ -425,7 +471,6 @@ def test_unchanged_resume_succeeds(
         ({"model": "other/model"}, "contract_mismatch_model"),
         ({"baseline": "compile"}, "contract_mismatch_baseline"),
         ({"min_e2e_speedup": 1.5}, "contract_mismatch_promotion_threshold"),
-        ({"budget_hours": 9.0}, "contract_mismatch_budget_policy"),
         (
             {"per_candidate_budget_seconds": 60.0},
             "contract_mismatch_candidate_timeout",
@@ -445,6 +490,25 @@ def test_resume_rejects_changed_policy(
 
     with pytest.raises(PreflightError, match=code):
         run_optimize(_config(tmp_path, repo_root, **overrides))
+
+
+def test_resume_accepts_changed_budget_and_renews_deadline(
+    tmp_path: Path, repo_root: Path, monkeypatch: pytest.MonkeyPatch
+):
+    config = _start_campaign(tmp_path, repo_root, monkeypatch)
+    contract_before = (config.output / "run_contract.json").read_bytes()
+    _interrupt(config)
+    state_path = config.output / "state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["budget_deadline_epoch"] = 0.0
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+
+    receipt = run_optimize(_config(tmp_path, repo_root, budget_hours=2.0))
+
+    assert receipt["terminal"] == "promoted"
+    assert (config.output / "run_contract.json").read_bytes() == contract_before
+    renewed = json.loads(state_path.read_text(encoding="utf-8"))
+    assert renewed["budget_deadline_epoch"] > 0.0
 
 
 def test_resume_rejects_changed_workload_content(

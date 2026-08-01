@@ -373,7 +373,8 @@ exists with the expected package and launcher structure, the workload parses
 under the shared schema, the output directory is atomically writable, stage
 command names and `{placeholders}` are known and their programs executable, the
 resolved search agent exists, and every budget, threshold, and timeout is
-finite and positive.
+finite and positive. It also rejects output filesystems with less than 512 MiB
+free and warns below 10 GiB, before a GPU allocation can be wasted.
 
 ```bash
 python optimize.py ... --preflight-only
@@ -391,7 +392,10 @@ When a campaign begins, the same material configuration is pinned into a
 write-once `run_contract.json`. Every resume compares against it and fails
 closed with a stable `contract_mismatch_*` reason code when the model, workload
 *content*, FastVideo checkout, baseline, promotion threshold, stage commands,
-search-agent command, or budget policy has changed. Hashing the workload means
+search-agent command, or candidate timeout has changed. `--budget-hours` is a
+per-invocation allowance rather than part of evidence identity, so resuming a
+non-terminal campaign may extend its runtime and starts a fresh wall-clock
+deadline without rewriting the contract. Hashing the workload means
 an edit to the same file path is caught, which a path comparison cannot see.
 A checkout is identified by its git commit when one is resolvable, so moving a
 checkout is fine while changing its commit is not. Use a new `--output` or

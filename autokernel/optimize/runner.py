@@ -29,7 +29,6 @@ _RESUME_IDENTITY_FIELDS = (
     "fastvideo_checkout",
     "model",
     "workload",
-    "budget_hours",
     "baseline",
     "min_e2e_speedup",
     "stage_commands",
@@ -243,8 +242,9 @@ def run_optimize(
         state["budget_deadline_epoch"] = time.time() + config.budget_hours * 3600.0
         save_state(layout["state"], state)
 
-    # Ensure deadline exists for resumed runs that predate the field.
-    if state.get("budget_deadline_epoch") is None:
+    # A resume receives a fresh wall-clock allowance. Duration is an
+    # operational control, so extending it does not change run identity.
+    if config.resume:
         state["budget_deadline_epoch"] = time.time() + config.budget_hours * 3600.0
         save_state(layout["state"], state)
 
