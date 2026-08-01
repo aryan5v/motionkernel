@@ -45,6 +45,20 @@ def _load_stage_commands(path: Path | None) -> dict[str, list[str]] | None:
     return commands
 
 
+def _load_argv(path: Path | None) -> list[str] | None:
+    if path is None:
+        return None
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise OptimizeError(f"cannot load agent command {path}: {exc}") from exc
+    if not isinstance(raw, list) or not raw or not all(
+        isinstance(part, str) and part for part in raw
+    ):
+        raise OptimizeError("agent command file must contain a non-empty JSON argv array")
+    return raw
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -112,6 +126,17 @@ def _parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--search-agent-command",
+        type=Path,
+        default=None,
+        metavar="JSON",
+        help=(
+            "Optional JSON argv array for the autonomous search agent. "
+            "Supports {repo_root}, {run_dir}, {candidate_dir}, {prompt_file}, "
+            "and {last_message}; defaults to the installed Codex CLI."
+        ),
+    )
+    parser.add_argument(
         "--no-resume",
         action="store_true",
         help="Ignore completed stages and start a fresh campaign state",
@@ -140,6 +165,7 @@ def main(argv: list[str] | None = None) -> int:
             min_e2e_speedup=args.min_e2e_speedup,
             per_candidate_budget_seconds=args.per_candidate_budget_seconds,
             stage_commands=_load_stage_commands(args.stage_commands),
+            search_agent_command=_load_argv(args.search_agent_command),
             repo_root=repo_root,
         )
         receipt = run_optimize(config)

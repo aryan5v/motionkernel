@@ -284,9 +284,57 @@ def test_e2e_adapter_requires_dispatch_and_real_parity(
     assert calls[0]["env"]["FASTVIDEO_OPTIMIZATION_ARTIFACT_VALIDATION"] == "1"
 
 
-@pytest.mark.parametrize("stage", ["search", "isolated_validate"])
-def test_external_stages_have_no_builtin_adapter(tmp_path: Path, stage: str):
-    _input(tmp_path, stage)
+def test_search_adapter_runs_builtin_agent_search(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    config = _input(tmp_path, "search")
+    candidate = {"fingerprint": "c" * 32}
+    _prior(tmp_path, "specgen", candidates=[candidate])
+    calls = []
 
-    with pytest.raises(ProductionAdapterError, match="--stage-commands"):
-        run_production_stage(stage, tmp_path)
+    def fake_search(run_dir, candidates, received_config):
+        calls.append((run_dir, candidates, received_config))
+        return {
+            "candidates": [{**candidate, "search": {"speedup": 1.2}}],
+            "failures": [],
+        }
+
+    monkeypatch.setattr("autokernel.optimize.adapters.search_candidates", fake_search)
+
+    result = run_production_stage("search", tmp_path)
+
+    assert result["metrics"]["faster_candidates"] == 1
+    assert result["candidates"][0]["search"]["speedup"] == 1.2
+    assert calls == [(tmp_path, [candidate], config)]
+
+
+def test_isolated_adapter_emits_measured_package_requests(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    _input(tmp_path, "isolated_validate")
+    candidate = {"fingerprint": "d" * 32, "search": {"speedup": 1.2}}
+    _prior(tmp_path, "search", candidates=[candidate])
+    request = _package_request(tmp_path)
+
+    monkeypatch.setattr(
+        "autokernel.optimize.adapters.validate_candidates",
+        lambda run_dir, candidates, received_config: {
+            "candidates": [
+                {
+                    **candidate,
+                    "validation": {
+                        "speedup": 1.15,
+                        "artifact_id": "candidate-one",
+                    },
+                }
+            ],
+            "package_requests": [request],
+            "failures": [],
+        },
+    )
+
+    result = run_production_stage("isolated_validate", tmp_path)
+
+    assert result["metrics"]["isolated_correct"] is True
+    assert result["metrics"]["isolated_speedup"] == pytest.approx(1.15)
+    assert result["package_requests"] == [request]

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 # Ordered campaign stages (linear control plane).
 PIPELINE_STAGES: tuple[str, ...] = (
@@ -63,6 +64,10 @@ class OptimizeConfig:
     # Opaque artifact directory written by the packager stage (Task 2 contract).
     artifact_dir_name: str = "artifacts"
     per_candidate_budget_seconds: float | None = None
+    # Optional argv for the autonomous search agent. Placeholders are
+    # expanded without a shell; when omitted, the built-in adapter uses the
+    # installed Codex CLI.
+    search_agent_command: Sequence[str] | None = None
     repo_root: Path | None = None
 
     def as_dict(self) -> dict[str, Any]:
@@ -82,6 +87,11 @@ class OptimizeConfig:
             ),
             "artifact_dir_name": self.artifact_dir_name,
             "per_candidate_budget_seconds": self.per_candidate_budget_seconds,
+            "search_agent_command": (
+                list(self.search_agent_command)
+                if self.search_agent_command
+                else None
+            ),
             "repo_root": str(self.repo_root) if self.repo_root else None,
         }
 
@@ -112,7 +122,7 @@ class StageRecord:
         }
 
     @classmethod
-    def from_dict(cls, raw: Mapping[str, Any]) -> "StageRecord":
+    def from_dict(cls, raw: Mapping[str, Any]) -> StageRecord:
         return cls(
             name=str(raw["name"]),
             status=str(raw["status"]),

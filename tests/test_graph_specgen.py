@@ -213,6 +213,40 @@ def test_derivation_isolates_allowlisted_component_with_explicit_boundary() -> N
     assert derived.parent_module == "transformer.blocks"
 
 
+def test_derivation_returns_selected_values_used_outside_component() -> None:
+    ir = _ir(
+        [_input("x", (2, 3)), _input("weight", (3, 3))],
+        [
+            _node(
+                "negative",
+                "aten.neg.default",
+                [_ref("x")],
+                meta=_meta((2, 3)),
+            ),
+            _node(
+                "updated",
+                "aten.add.Tensor",
+                [_ref("negative"), _ref("x")],
+                meta=_meta((2, 3)),
+            ),
+            _node(
+                "unsupported",
+                "aten.mm.default",
+                [_ref("negative"), _ref("weight")],
+                meta=_meta((2, 3)),
+            ),
+        ],
+        [_ref("updated"), _ref("unsupported")],
+    )
+
+    derived = derive_safe_subregion(
+        _region_for(ir, ["aten::neg", "aten::add", "aten::mm"])
+    )
+
+    assert derived.selected_node_ids == ("negative", "updated")
+    assert derived.output_node_ids == ("updated", "negative")
+
+
 def test_derivation_preserves_custom_op_identity_but_excludes_it() -> None:
     ir = _ir(
         [_input("x", (2, 3))],

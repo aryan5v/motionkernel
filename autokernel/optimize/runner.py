@@ -24,7 +24,6 @@ from .state import (
 )
 from .types import PIPELINE_STAGES, OptimizeConfig
 
-
 _RESUME_IDENTITY_FIELDS = (
     "fastvideo_checkout",
     "model",
@@ -35,6 +34,7 @@ _RESUME_IDENTITY_FIELDS = (
     "stage_commands",
     "artifact_dir_name",
     "per_candidate_budget_seconds",
+    "search_agent_command",
     "repo_root",
 )
 
@@ -77,6 +77,10 @@ def _validate_config(config: OptimizeConfig) -> None:
         for stage, command in config.stage_commands.items():
             if not command or any(not str(part) for part in command):
                 raise OptimizeError(f"stage command for {stage!r} must not be empty")
+    if config.search_agent_command and any(
+        not str(part) for part in config.search_agent_command
+    ):
+        raise OptimizeError("search_agent_command must not contain empty arguments")
 
 
 def _validate_resume_config(stored: dict[str, Any], config: OptimizeConfig) -> None:
@@ -133,10 +137,11 @@ def _decide_terminal(
                 if speedup is None or speedup < min_e2e_speedup:
                     return (
                         "no_worthwhile_candidate",
-                        "promotion blocked: end-to-end speedup below threshold "
-                        f"(isolated speedup="
-                        f"{(isolated.get('metrics') or {}).get('isolated_speedup')!r} "
-                        "is not sufficient)",
+                        (
+                            f"promotion blocked: end-to-end speedup below threshold "
+                            f"(isolated speedup={(isolated.get('metrics') or {}).get('isolated_speedup')!r} "
+                            f"is not sufficient)"
+                        ),
                     )
                 if classification != "improved":
                     return (
@@ -178,9 +183,11 @@ def _decide_terminal(
     ):
         return (
             "no_worthwhile_candidate",
-            "end-to-end result does not meet promotion threshold "
-            f"(isolated speedup="
-            f"{(isolated.get('metrics') or {}).get('isolated_speedup')!r} ignored)",
+            (
+                f"end-to-end result does not meet promotion threshold "
+                f"(isolated speedup={(isolated.get('metrics') or {}).get('isolated_speedup')!r} "
+                f"ignored)"
+            ),
         )
     return ("failed", "campaign finished without a clear promotion decision")
 
@@ -257,6 +264,10 @@ def run_optimize(config: OptimizeConfig) -> dict[str, Any]:
             if stage == "discover" and payload.get("recommendation") == "no_worthwhile_candidate":
                 break
             if stage == "specgen" and payload.get("recommendation") == "no_worthwhile_candidate":
+                break
+            if stage in {"search", "isolated_validate"} and payload.get(
+                "recommendation"
+            ) == "no_worthwhile_candidate":
                 break
     except OptimizeError as exc:
         if "budget exhausted" in str(exc).lower():

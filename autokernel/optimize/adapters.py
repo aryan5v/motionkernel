@@ -1,9 +1,9 @@
 """Production adapters for the built-in optimize stages.
 
 The optimize runner owns process isolation and the versioned ``result.json``
-envelope.  This module translates that envelope to the existing FastVideo and
-MotionKernel APIs.  Kernel search and isolated validation intentionally remain
-external commands; their measured output is consumed by the package adapter.
+envelope. This module translates that envelope to the existing FastVideo and
+MotionKernel APIs, including autonomous search and independently measured
+isolated validation.
 """
 
 from __future__ import annotations
@@ -37,6 +37,7 @@ from autokernel.workload.result import (
     load_generation_result,
 )
 
+from .search import BuiltinSearchError, search_candidates, validate_candidates
 from .state import read_json
 from .types import STAGE_RESULT_SCHEMA_VERSION
 
@@ -259,6 +260,59 @@ def _specgen(run_dir: Path, config: Mapping[str, Any]) -> dict[str, Any]:
         f"generated {len(generated)} graph-derived specification(s)",
         metrics={"specs_generated": len(generated)},
         candidates=generated,
+    )
+
+
+def _search(run_dir: Path, config: Mapping[str, Any]) -> dict[str, Any]:
+    specified = _prior_result(run_dir, "specgen")
+    candidates = specified.get("candidates")
+    if not isinstance(candidates, list):
+        raise ProductionAdapterError("specgen result candidates must be a list")
+    outcome = search_candidates(run_dir, candidates, config)
+    searched = outcome["candidates"]
+    return _result(
+        "search",
+        (
+            f"autonomous search produced {len(searched)} faster candidate(s)"
+            if searched
+            else "autonomous search found no candidate faster than the reference"
+        ),
+        metrics={
+            "candidates_searched": len(candidates),
+            "faster_candidates": len(searched),
+            "failures": len(outcome.get("failures") or []),
+        },
+        **outcome,
+    )
+
+
+def _isolated_validate(run_dir: Path, config: Mapping[str, Any]) -> dict[str, Any]:
+    search = _prior_result(run_dir, "search")
+    candidates = search.get("candidates")
+    if not isinstance(candidates, list):
+        raise ProductionAdapterError("search result candidates must be a list")
+    outcome = validate_candidates(run_dir, candidates, config)
+    validated = outcome["candidates"]
+    speedups = [
+        float(item["validation"]["speedup"])
+        for item in validated
+        if isinstance(item, Mapping)
+        and isinstance(item.get("validation"), Mapping)
+    ]
+    return _result(
+        "isolated_validate",
+        (
+            f"independently validated {len(validated)} faster candidate(s)"
+            if validated
+            else "no searched candidate passed isolated correctness and speed gates"
+        ),
+        metrics={
+            "isolated_correct": bool(validated),
+            "isolated_speedup": max(speedups, default=0.0),
+            "candidates_validated": len(validated),
+            "failures": len(outcome.get("failures") or []),
+        },
+        **outcome,
     )
 
 
@@ -661,6 +715,8 @@ _ADAPTERS: dict[str, Callable[[Path, Mapping[str, Any]], dict[str, Any]]] = {
     "profile": _profile,
     "discover": _discover,
     "specgen": _specgen,
+    "search": _search,
+    "isolated_validate": _isolated_validate,
     "package": _package,
     "end_to_end_validate": _end_to_end_validate,
     "finalize": _finalize,
@@ -681,5 +737,11 @@ def run_production_stage(stage: str, run_dir: str | Path) -> dict[str, Any]:
         return adapter(root, stage_input["config"])
     except ProductionAdapterError:
         raise
-    except (ArtifactError, DiscoveryError, SpecGenerationError, WorkloadError) as exc:
+    except (
+        ArtifactError,
+        BuiltinSearchError,
+        DiscoveryError,
+        SpecGenerationError,
+        WorkloadError,
+    ) as exc:
         raise ProductionAdapterError(str(exc)) from exc

@@ -23,8 +23,13 @@
 - Connected `optimize.py` production stages to the existing FastVideo
   generation/profile launcher, MotionKernel discovery/spec generation and
   artifact packager, and hash-verified end-to-end candidate validation. Search
-  and isolated validation remain explicit external commands; packaging rejects
-  synthetic or prematurely promoted evidence.
+  now has a built-in autonomous-agent adapter (Codex by default, configurable
+  by argv), and isolated validation reruns the fixed full harness before
+  deriving package evidence; missing agents and missing measurements fail
+  instead of being mislabeled as no worthwhile candidate.
+- Safe-subregion generation now returns selected intermediate values that are
+  consumed by unsupported parent-graph nodes, allowing runtime rewrite to erase
+  the selected component without leaving external users behind.
 - Added the resumable `optimize.py` V1 control plane with isolated JSON stage
   contracts, wall-clock and per-candidate budgets, durable receipts/morning
   reports, and end-to-end-only promotion gates.

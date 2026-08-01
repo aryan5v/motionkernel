@@ -10,18 +10,24 @@ connects the following stages to the existing FastVideo and MotionKernel APIs:
 | `profile` | Dedicated post-warmup native generation with FX/export capture enabled | `RUN/stages/profile/profiler.json` |
 | `discover` | Validate, correlate, rank, and persist the profiler/capture export | `RUN/stages/discover/discovery.json` |
 | `specgen` | Generate a graph-derived spec and corpus for every search-worthy region | `RUN/candidates/FINGERPRINT/` |
+| `search` | Run an autonomous coding agent against the immutable generated spec/corpus, then remeasure its candidate | `RUN/stages/search/FINGERPRINT/` |
+| `isolated_validate` | Run the fixed full correctness/performance harness independently and derive quarantined bundle sections | `RUN/stages/isolated_validate/FINGERPRINT/` |
 | `package` | Package hash-verified quarantined bundles from measured isolated results | `RUN/artifacts/ARTIFACT_ID/` |
 | `end_to_end_validate` | Run FastVideo candidate mode, require dispatch, compare frames, and classify end-to-end timing | `RUN/stages/end_to_end_validate/` plus `RUN/generation/candidate_result.json` |
 | `finalize` | Rewrite the selected quarantined bundles with measured generation evidence and a promoted/rejected decision | `RUN/artifacts/ARTIFACT_ID/artifact.json` |
 
-`search` and `isolated_validate` remain external stage commands. Configure both
-with `--stage-commands`; the control plane still applies its campaign and
-per-candidate time budgets to those subprocesses.
+Search uses the installed Codex CLI by default. Another agent can be supplied
+as a JSON argv array with `--search-agent-command`; placeholder expansion never
+invokes a shell. A missing agent or a run that produces no benchmark is an
+infrastructure failure, not `no_worthwhile_candidate`. The latter verdict is
+only emitted after a measured candidate fails to beat the isolated reference.
 
-## External isolated-validation handoff
+## Built-in isolated-validation handoff
 
-The `isolated_validate` result must use the ordinary stage-result envelope and
-add a non-empty `package_requests` list:
+The validator runs after the search agent has exited. It reruns the complete
+fixed harness (not quick mode), requires all forward correctness stages and a
+measured speedup, derives compatibility from the GPU result, writes the runtime
+adapter, and emits the ordinary stage envelope with `package_requests`:
 
 ```json
 {
@@ -52,11 +58,11 @@ add a non-empty `package_requests` list:
 }
 ```
 
-The abbreviated objects above must contain every field required by artifact
-schema 1. The adapter does not infer benchmark numbers, compatibility ranges,
-or promotion evidence. It rejects a failed isolated benchmark, a pre-validation
-`promoted` decision, and generation evidence claiming to have passed before
-the full-generation stage ran.
+The search agent cannot provide or override these sections. The abbreviated
+objects above contain every field required by artifact schema 1 in a real run.
+Packaging rejects a failed isolated benchmark, a pre-validation `promoted`
+decision, and generation evidence claiming to have passed before the
+full-generation stage ran.
 
 The end-to-end adapter loads quarantined bundles only in FastVideo's explicit
 validation mode. A successful result requires all three conditions:
@@ -162,9 +168,8 @@ The stage result reports the finalized bundle paths and every decision:
 ## Current contract gaps
 
 - Artifact schema 1 requires a generation evidence object before the candidate
-  can be packaged for its first full-generation run. The external validation
-  command must therefore provide an explicit pending/failed measurement record;
-  the adapter never invents one.
+  can be packaged for its first full-generation run. The built-in validator
+  therefore records an explicit pending measurement until the end-to-end stage.
 - Artifact schema 1 has no dedicated parity field in `evidence.generation`.
   Finalization records the measured parity policy and its result in the
   promotion `reason` and reflects it in `passed`; a machine-readable parity
@@ -178,9 +183,9 @@ The stage result reports the finalized bundle paths and every decision:
 - The dispatch `decisions` list is the only link between a bundle and the run
   that exercised it. FastVideo must emit one entry per selection with the
   artifact id; a runtime that reports counts only cannot be finalized.
-- Search has no universal invocation contract yet. Its command must write the
-  candidate payload and the isolated validator must identify that payload in
-  `package_requests`.
+- Autonomous search still requires an installed, authenticated coding-agent
+  CLI (Codex by default) on the GPU worker. The fixed harness and validation
+  gates are agent-independent.
 - The profile adapter currently assumes a single profiler export path. A
   multi-rank workload needs a future aggregation contract for rank-suffixed
   exports before discovery can rank the complete workload.

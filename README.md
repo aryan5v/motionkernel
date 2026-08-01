@@ -356,7 +356,6 @@ python optimize.py \
   --baseline compile \
   --budget-hours 10 \
   --per-candidate-budget-seconds 3600 \
-  --stage-commands stage_commands.json \
   --output workspace/wan-overnight
 ```
 
@@ -367,16 +366,14 @@ Re-running the same command resumes completed stages. A changed model,
 workload, baseline, adapter command, or validation policy is rejected on
 resume; use a new output directory or `--no-resume` for a fresh campaign.
 
-Built-in production adapters now run the FastVideo baseline/profile launcher,
-MotionKernel discovery/spec generation and packaging, the final FastVideo
-A/B validation, and artifact finalization that rewrites the quarantined bundle
-with measured generation evidence and a promoted/rejected decision. Kernel
-`search` and `isolated_validate` remain external and must be supplied with
-`--stage-commands commands.json`. The file maps stage
-names to argv arrays and supports `{stage}`, `{run_dir}`,
-`{repo_root}`, `{fastvideo_checkout}`, `{workload}`, `{model}`, `{baseline}`,
-and `{artifact_dir}` placeholders. The isolated-validation command hands real
-benchmark evidence and package inputs back through `package_requests`; see
+Built-in production adapters run the FastVideo baseline/profile launcher,
+MotionKernel discovery/spec generation, autonomous kernel search, independent
+isolated validation and packaging, the final FastVideo A/B validation, and
+artifact finalization. Search uses the installed Codex CLI by default; pass
+`--search-agent-command agent.json` to use another agent argv without a shell.
+The JSON array supports `{repo_root}`, `{run_dir}`, `{candidate_dir}`,
+`{prompt_file}`, and `{last_message}` placeholders. The fixed validator—not the
+search agent—derives benchmark evidence and package inputs. See
 [`docs/OPTIMIZE_STAGE_ADAPTERS.md`](docs/OPTIMIZE_STAGE_ADAPTERS.md) for the
 contract. The control plane writes `state.json`,
 per-stage inputs/results/logs, command receipts, `receipt.json`, and
@@ -385,6 +382,9 @@ meets the configured threshold; an isolated benchmark can never promote it.
 The built-in adapters still run inside stage subprocesses. They fail closed on
 missing FastVideo outputs, malformed metadata, absent benchmark evidence,
 failed parity, or dispatch that never selected the candidate.
+
+`--stage-commands` remains available as an expert override for any complete
+stage, but it is no longer required for the standard V1 pipeline.
 
 For a CPU-only contract smoke test, set `MOTIONKERNEL_SIMULATE=1` and optionally
 `MOTIONKERNEL_SIMULATE_OUTCOME=promoted|no_worthwhile_candidate|fail_at:STAGE`.

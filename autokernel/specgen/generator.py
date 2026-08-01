@@ -185,7 +185,18 @@ def derive_safe_subregion(region: GraphRegion) -> DerivedSubregion:
     parent_output_refs = [
         ref for output in ir.outputs for ref in _iter_refs(output) if ref in component
     ]
-    terminal = list(dict.fromkeys(parent_output_refs))
+    external_user_refs = [
+        ref
+        for node in ir.nodes
+        if node.id not in component
+        for ref in node.refs()
+        if ref in component
+    ]
+    # A selected value can feed both another selected node and an unselected
+    # parent-graph node. Such a value is not a sink inside the component, but
+    # it is still a required rewrite output. Omitting it leaves a live external
+    # user behind when dispatch erases the selected nodes.
+    terminal = list(dict.fromkeys([*parent_output_refs, *external_user_refs]))
     terminal.extend(
         node.id
         for node in selected
