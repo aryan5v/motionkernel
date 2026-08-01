@@ -48,6 +48,7 @@ ALLOWED_TARGETS = frozenset(
         "aten.rsqrt.default",
         "aten.silu.default",
         "aten.gelu.default",
+        "aten.linear.default",
         "aten.native_layer_norm.default",
         "aten.layer_norm.default",
         "aten._to_copy.default",

@@ -3,9 +3,10 @@
 ## Unreleased (downstream)
 
 - Extended the executable-IR trust boundary with the exact `mean.dim`,
-  `rsqrt.default`, `silu.default`, and `gelu.default` ATen overloads observed
-  in the LTX transformer profile. RMSNorm and activation chains can now remain
-  connected search candidates instead of collapsing to a lone arithmetic op;
+  `rsqrt.default`, `silu.default`, `gelu.default`, and `linear.default` ATen
+  overloads observed in the LTX transformer profile. RMSNorm, activation, and
+  the measured linear-GELU-linear FeedForward chains can now remain connected
+  search candidates instead of collapsing to lone arithmetic ops;
   eager-reference parity is covered for each new operation family.
 - Added a fail-closed preflight phase and an immutable run contract to the
   optimize control plane (`autokernel/optimize/preflight.py`). Preflight runs
