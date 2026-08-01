@@ -127,7 +127,7 @@ class GenerationOutcome:
         if self.stage_status != "ok":
             return (
                 "quarantined",
-                "held: the end-to-end validation stage did not complete",
+                "held: the end-to-end validation stage did not run to completion",
             )
         if not self.parity_passed:
             return (

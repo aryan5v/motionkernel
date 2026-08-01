@@ -638,7 +638,14 @@ def _finalize(run_dir: Path, config: Mapping[str, Any]) -> dict[str, Any]:
             and math.isfinite(float(speedup))
             else None
         ),
-        stage_status="failed" if validated.get("recommendation") == "failed" else "ok",
+        # Whether the stage *ran*, not whether its verdict passed. Collapsing
+        # a failing verdict into "failed" here made every quarantine report
+        # "the end-to-end validation stage did not complete", which in r4 was
+        # untrue -- the stage completed and returned a definite negative -- and
+        # suppressed the specific reason. parity_passed, artifact_selected,
+        # classification and speedup are all populated above; decide() reads
+        # them and names the actual cause.
+        stage_status="ok" if validated.get("status") == "ok" else "failed",
         parity_policy=parity_policy,
         baseline_ref=str(artifacts.get("native_result") or ""),
         candidate_ref=str(artifacts.get("candidate_result") or ""),
