@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from .preflight import PreflightError, execute_preflight, write_run_contract
 from .report import write_morning_report
 from .stages import run_stage
 from .state import (
@@ -22,7 +23,7 @@ from .state import (
     utc_now,
     write_json_atomic,
 )
-from .types import PIPELINE_STAGES, OptimizeConfig
+from .types import PIPELINE_STAGES, RECEIPT_SCHEMA_VERSION, OptimizeConfig
 
 _RESUME_IDENTITY_FIELDS = (
     "fastvideo_checkout",
@@ -39,48 +40,30 @@ _RESUME_IDENTITY_FIELDS = (
 )
 
 
-def _validate_config(config: OptimizeConfig) -> None:
-    if config.baseline not in {"eager", "compile"}:
-        raise OptimizeError("baseline must be 'eager' or 'compile'")
-    if not math.isfinite(config.budget_hours) or config.budget_hours <= 0:
-        raise OptimizeError("budget_hours must be finite and positive")
-    if not math.isfinite(config.min_e2e_speedup) or config.min_e2e_speedup <= 0:
-        raise OptimizeError("min_e2e_speedup must be finite and positive")
-    if (
-        config.per_candidate_budget_seconds is not None
-        and (
-            not math.isfinite(config.per_candidate_budget_seconds)
-            or config.per_candidate_budget_seconds <= 0
-        )
-    ):
-        raise OptimizeError(
-            "per_candidate_budget_seconds must be finite and positive"
-        )
-    if not config.model.strip():
-        raise OptimizeError("model must not be empty")
-    if not config.fastvideo_checkout.is_dir():
-        raise OptimizeError(
-            f"FastVideo checkout not found: {config.fastvideo_checkout}"
-        )
-    if not config.workload.is_file():
-        raise OptimizeError(f"workload not found: {config.workload}")
-    if (
-        not config.artifact_dir_name
-        or config.artifact_dir_name in {".", ".."}
-        or Path(config.artifact_dir_name).name != config.artifact_dir_name
-    ):
-        raise OptimizeError("artifact_dir_name must be one directory name")
-    if config.stage_commands:
-        unknown = sorted(set(config.stage_commands) - set(PIPELINE_STAGES))
-        if unknown:
-            raise OptimizeError(f"unknown stage command(s): {', '.join(unknown)}")
-        for stage, command in config.stage_commands.items():
-            if not command or any(not str(part) for part in command):
-                raise OptimizeError(f"stage command for {stage!r} must not be empty")
-    if config.search_agent_command and any(
-        not str(part) for part in config.search_agent_command
-    ):
-        raise OptimizeError("search_agent_command must not contain empty arguments")
+def _run_preflight(
+    config: OptimizeConfig,
+    layout: dict[str, Path],
+) -> dict[str, Any]:
+    """Validate every precondition before any campaign state is mutated.
+
+    The report is persisted whenever the run directory is usable so a failed
+    unattended run still leaves a machine-readable diagnosis behind, but no
+    campaign state is created until every check passes.
+    """
+    resuming = bool(config.resume and layout["state"].is_file())
+    report, contract = execute_preflight(
+        config,
+        contract_path=layout["run_contract"],
+        resuming=resuming,
+    )
+    try:
+        write_json_atomic(layout["preflight"], report.as_dict())
+    except OSError:
+        # The output directory itself is unusable; the findings below say so.
+        pass
+    if not report.passed:
+        raise PreflightError(report.failure_message())
+    return contract
 
 
 def _validate_resume_config(stored: dict[str, Any], config: OptimizeConfig) -> None:
@@ -192,12 +175,32 @@ def _decide_terminal(
     return ("failed", "campaign finished without a clear promotion decision")
 
 
-def run_optimize(config: OptimizeConfig) -> dict[str, Any]:
-    """Execute or resume the full optimize pipeline."""
-    _validate_config(config)
+def run_optimize(
+    config: OptimizeConfig,
+    *,
+    preflight_only: bool = False,
+) -> dict[str, Any]:
+    """Execute or resume the full optimize pipeline.
 
+    ``preflight_only`` validates every precondition, writes ``preflight.json``,
+    and returns without running a stage or creating campaign state.
+    """
     layout = run_dir_layout(config.output)
-    layout["root"].mkdir(parents=True, exist_ok=True)
+    contract = _run_preflight(config, layout)
+
+    if preflight_only:
+        return {
+            "schema_version": RECEIPT_SCHEMA_VERSION,
+            "terminal": "preflight_passed",
+            "status": "preflight_passed",
+            "message": "preflight passed; no stages were run",
+            "model": config.model,
+            "workload": str(config.workload),
+            "output": str(config.output),
+            "preflight": str(layout["preflight"]),
+            "pipeline_stages": list(PIPELINE_STAGES),
+        }
+
     for key in ("stages", "logs", "candidates", "artifacts", "commands"):
         layout[key].mkdir(parents=True, exist_ok=True)
 
@@ -230,6 +233,10 @@ def run_optimize(config: OptimizeConfig) -> dict[str, Any]:
         # while new stages are still running.
         layout["receipt"].unlink(missing_ok=True)
         layout["morning_report"].unlink(missing_ok=True)
+        # A deliberately fresh campaign supersedes any previous contract; a
+        # resumed one never rewrites it.
+        layout["run_contract"].unlink(missing_ok=True)
+        write_run_contract(layout["run_contract"], contract)
         write_json_atomic(layout["config"], config.as_dict())
         state = initial_state(config)
         # Wall-clock deadline for the campaign budget.

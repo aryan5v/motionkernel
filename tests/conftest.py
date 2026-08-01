@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +12,48 @@ from autokernel.specs import DT_BYTES, KernelSpec, Tolerance, size
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
+
+#: A minimal manifest that passes the real workload schema. Written as JSON so
+#: the CPU suite does not require PyYAML.
+WORKLOAD_FIXTURE: dict[str, Any] = {
+    "schema_version": 1,
+    "workload_id": "cpu-contract",
+    "task": "t2v",
+    "prompt": "a preflight contract test workload",
+    "model": {"model_id": "test/model"},
+    "sampling": {
+        "height": 64,
+        "width": 64,
+        "num_frames": 9,
+        "num_inference_steps": 2,
+        "guidance_scale": 1.0,
+        "seed": 0,
+    },
+}
+
+
+def make_fastvideo_checkout(root: Path, *, complete: bool = True) -> Path:
+    """Create a directory with the structure preflight expects of FastVideo."""
+    checkout = root / "FastVideo"
+    package = checkout / "fastvideo"
+    package.mkdir(parents=True, exist_ok=True)
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    if complete:
+        launcher_dir = checkout / "examples" / "inference" / "optimizations"
+        launcher_dir.mkdir(parents=True, exist_ok=True)
+        (launcher_dir / "generation_launcher.py").write_text(
+            "", encoding="utf-8"
+        )
+    return checkout
+
+
+def make_workload(path: Path, **overrides: Any) -> Path:
+    """Write a schema-valid workload manifest, overriding any top-level field."""
+    payload: dict[str, Any] = json.loads(json.dumps(WORKLOAD_FIXTURE))
+    payload.update(overrides)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return path
 
 
 def _ref(x: Any = None, y: Any = None) -> Any:
@@ -92,8 +135,11 @@ requires_gpu = pytest.mark.skipif(
 __all__ = [
     "FIXTURES_DIR",
     "REPO_ROOT",
+    "WORKLOAD_FIXTURE",
     "cuda_available",
+    "make_fastvideo_checkout",
     "make_spec",
+    "make_workload",
     "requires_gpu",
     "spec_kwargs",
 ]

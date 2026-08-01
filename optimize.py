@@ -9,6 +9,9 @@ Usage:
       --budget-hours 10 \\
       --output workspace/ltx
 
+    # Validate the environment and exit without starting a campaign:
+    python optimize.py ... --preflight-only
+
     # Offline smoke / tests (simulated stages):
     MOTIONKERNEL_SIMULATE=1 MOTIONKERNEL_SIMULATE_OUTCOME=promoted \\
       python optimize.py ... --budget-hours 1 --output workspace/v1-smoke
@@ -63,8 +66,11 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Run a resumable MotionKernel overnight optimize campaign "
-            "(baseline → profile → discover → specgen → search → "
-            "isolated_validate → package → end_to_end_validate → finalize)"
+            "(preflight → baseline → profile → discover → specgen → search → "
+            "isolated_validate → package → end_to_end_validate → finalize). "
+            "Preflight validates the environment and pins an immutable run "
+            "contract before any stage runs; a resume fails closed when the "
+            "model, workload content, checkout, or policy has changed."
         )
     )
     parser.add_argument(
@@ -137,6 +143,14 @@ def _parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--preflight-only",
+        action="store_true",
+        help=(
+            "Validate every precondition, write preflight.json, and exit "
+            "without running a stage or creating campaign state"
+        ),
+    )
+    parser.add_argument(
         "--no-resume",
         action="store_true",
         help="Ignore completed stages and start a fresh campaign state",
@@ -168,14 +182,14 @@ def main(argv: list[str] | None = None) -> int:
             search_agent_command=_load_argv(args.search_agent_command),
             repo_root=repo_root,
         )
-        receipt = run_optimize(config)
+        receipt = run_optimize(config, preflight_only=args.preflight_only)
     except OptimizeError as exc:
         print(f"OPTIMIZE: FAIL\n{exc}", file=sys.stderr)
         return 2
 
     print(json.dumps(receipt, indent=2))
     terminal = receipt.get("terminal") or receipt.get("status")
-    if terminal in {"promoted", "no_worthwhile_candidate"}:
+    if terminal in {"promoted", "no_worthwhile_candidate", "preflight_passed"}:
         return 0
     return 1
 
