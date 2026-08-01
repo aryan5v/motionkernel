@@ -22,6 +22,7 @@ from autokernel.artifact import (
     REASON_INPUT_SIGNATURE_MISMATCH,
     REASON_MODEL_MISMATCH,
     REASON_NOT_PROMOTED,
+    REASON_NOT_SELECTED,
     REASON_OUTPUT_SIGNATURE_MISMATCH,
     REASON_TORCH_VERSION,
     REASON_TRITON_VERSION,
@@ -263,6 +264,20 @@ def test_packager_refuses_caller_supplied_file_digests(tmp_path):
         build_manifest(source, sections)
 
 
+@pytest.mark.parametrize("field", ["created_at", "producer"])
+def test_packager_refuses_caller_supplied_computed_identity(tmp_path, field):
+    source = _payload(tmp_path)
+    sections = _sections()
+    sections[field] = (
+        "2020-01-01T00:00:00+00:00"
+        if field == "created_at"
+        else {"name": "forged", "version": "0"}
+    )
+
+    with pytest.raises(ArtifactError, match="computed by the packager"):
+        build_manifest(source, sections)
+
+
 def test_packager_refuses_overwriting_without_permission(tmp_path):
     output, _ = _bundle(tmp_path)
     source = _payload(tmp_path, name="second")
@@ -321,6 +336,26 @@ def test_missing_declared_file_is_rejected(tmp_path):
 def test_undeclared_file_is_rejected(tmp_path):
     output, _ = _bundle(tmp_path)
     (output / "sneaky.py").write_text("SECRET = 1\n", encoding="utf-8")
+
+    with pytest.raises(ArtifactError, match="undeclared file"):
+        verify_bundle(output)
+
+
+def test_undeclared_bytecode_cache_is_rejected(tmp_path):
+    output, _ = _bundle(tmp_path)
+    cache = output / "__pycache__"
+    cache.mkdir()
+    (cache / "kernel.cpython-312.pyc").write_bytes(b"forged bytecode")
+
+    with pytest.raises(ArtifactError, match="undeclared file"):
+        verify_bundle(output)
+
+
+def test_undeclared_directory_symlink_is_rejected(tmp_path):
+    output, _ = _bundle(tmp_path)
+    target = tmp_path / "outside"
+    target.mkdir()
+    (output / "linked").symlink_to(target, target_is_directory=True)
 
     with pytest.raises(ArtifactError, match="undeclared file"):
         verify_bundle(output)
@@ -434,6 +469,35 @@ def test_entry_point_verifies_hashes_before_import(tmp_path):
 
     with pytest.raises(ArtifactError, match="kernel.py"):
         load_entry_point(output, trusted_root=tmp_path / "store")
+
+
+def test_entry_point_executes_only_the_bytes_bound_to_verified_digest(
+    tmp_path, monkeypatch
+):
+    output, _ = _bundle(tmp_path)
+    from autokernel.artifact import loader as loader_module
+
+    real_verify = loader_module.verify_bundle
+
+    def verify_then_replace(directory):
+        manifest = real_verify(directory)
+        (Path(directory) / "kernel.py").write_text(
+            'raise RuntimeError("replacement executed")\n', encoding="utf-8"
+        )
+        return manifest
+
+    monkeypatch.setattr(loader_module, "verify_bundle", verify_then_replace)
+
+    with pytest.raises(ArtifactError, match="changed after verification"):
+        load_entry_point(output, trusted_root=tmp_path / "store")
+
+
+def test_entry_point_rejects_changed_prior_manifest(tmp_path):
+    output, manifest = _bundle(tmp_path)
+    stale = dataclasses.replace(manifest, created_at="2020-01-01T00:00:00+00:00")
+
+    with pytest.raises(ArtifactError, match="manifest changed since validation"):
+        load_entry_point(output, trusted_root=tmp_path / "store", manifest=stale)
 
 
 def test_entry_point_missing_symbol_is_reported(tmp_path):
@@ -589,7 +653,7 @@ def test_fastest_compatible_artifact_wins(tmp_path):
 
     assert result.manifest is not None
     assert result.manifest.artifact_id == "fused-scale-add-fast"
-    assert [item.reason for item in result.rejections] == ["not_selected"]
+    assert [item.reason for item in result.rejections] == [REASON_NOT_SELECTED]
 
 
 def test_wildcard_compatibility_accepts_any_model(tmp_path):

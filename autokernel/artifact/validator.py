@@ -24,9 +24,9 @@ from .types import (
 #: importable module alongside a legitimately signed entry point.
 _UNDECLARED_ALLOWLIST = frozenset({MANIFEST_FILENAME})
 
-#: Directories ignored when enumerating bundle contents. These are produced by
-#: the interpreter after packaging and carry no trust.
-_IGNORED_DIRECTORIES = frozenset({"__pycache__"})
+#: No executable directory is ignored. Bytecode caches are executable content
+#: and must never be invisible to undeclared-file validation.
+_IGNORED_DIRECTORIES: frozenset[str] = frozenset()
 
 _READ_CHUNK_BYTES = 1 << 20
 
@@ -64,6 +64,9 @@ def read_manifest(bundle_dir: str | Path) -> ArtifactManifest:
 def _bundle_files(directory: Path) -> list[Path]:
     result = []
     for path in sorted(directory.rglob("*")):
+        if path.is_symlink():
+            result.append(path)
+            continue
         if path.is_dir():
             continue
         if any(part in _IGNORED_DIRECTORIES for part in path.relative_to(directory).parts):
