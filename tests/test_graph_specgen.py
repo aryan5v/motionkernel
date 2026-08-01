@@ -626,6 +626,53 @@ def test_runtime_adapter_converts_boundary_positionals_to_search_kwargs(
     torch_mod.testing.assert_close(actual, inputs[0] + inputs[1])
 
 
+def test_runtime_adapter_import_writes_no_candidate_bytecode(
+    tmp_path, torch_mod
+) -> None:
+    """The generated adapter must not write bytecode into an immutable bundle.
+
+    Runtimes import ``entry.py`` from inside a verified artifact bundle; a
+    bytecode cache written next to ``candidate.py`` would be undeclared
+    executable content and fail the bundle's next verification.
+    """
+    import importlib.util
+
+    from autokernel.specgen import write_runtime_adapter
+
+    region = _region_for(_gated_residual_ir(), [
+        "aten::_to_copy",
+        "aten::_to_copy",
+        "aten::unsqueeze",
+        "aten::mul",
+        "aten::add",
+        "aten::_to_copy",
+    ])
+    manifest = build_manifest(region)
+    (tmp_path / "candidate.py").write_text(
+        "def kernel_fn(**inputs):\n"
+        "    values = list(inputs.values())\n"
+        "    return values[0] + values[1]\n",
+        encoding="utf-8",
+    )
+    adapter = write_runtime_adapter(manifest, tmp_path / "entry.py")
+
+    # Simulate a runtime that imports the adapter through the standard source
+    # loader without bytecode suppression of its own.
+    spec = importlib.util.spec_from_file_location(
+        "test_runtime_adapter_bytecode", adapter
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    stray = [
+        path
+        for path in tmp_path.rglob("*.pyc")
+        if path.name.startswith("candidate")
+    ]
+    assert stray == []
+
+
 def test_discovery_specgen_cli_writes_bench_artifacts(tmp_path, repo_root) -> None:
     ir = _gated_residual_ir()
     region = _region_for(ir, _operations_for(ir))
