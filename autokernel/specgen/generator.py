@@ -500,6 +500,7 @@ def write_runtime_adapter(
 from __future__ import annotations
 
 import importlib.util
+import sys
 from pathlib import Path
 
 _CANDIDATE_PATH = Path(__file__).with_name({candidate_file!r})
@@ -509,7 +510,14 @@ _SPEC = importlib.util.spec_from_file_location(
 if _SPEC is None or _SPEC.loader is None:
     raise ImportError(f"cannot load candidate {{_CANDIDATE_PATH}}")
 _MODULE = importlib.util.module_from_spec(_SPEC)
-_SPEC.loader.exec_module(_MODULE)
+# A packaged bundle is immutable: importing the candidate must never write a
+# bytecode cache into it, because undeclared files fail bundle verification.
+_PREVIOUS_DONT_WRITE_BYTECODE = sys.dont_write_bytecode
+sys.dont_write_bytecode = True
+try:
+    _SPEC.loader.exec_module(_MODULE)
+finally:
+    sys.dont_write_bytecode = _PREVIOUS_DONT_WRITE_BYTECODE
 _KERNEL = getattr(_MODULE, {candidate_symbol!r})
 _INPUT_NAMES = {input_names!r}
 
