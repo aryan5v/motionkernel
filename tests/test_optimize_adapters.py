@@ -90,6 +90,7 @@ def test_default_search_agent_sandboxes_the_editable_candidate(
 
     assert command[command.index("-C") + 1] == str(candidate_dir)
     assert command[command.index("-s") + 1] == "workspace-write"
+    assert "--skip-git-repo-check" in command
     assert str(repo_root) not in command
 
 

@@ -21,6 +21,9 @@ as a JSON argv array with `--search-agent-command`; placeholder expansion never
 invokes a shell. A missing agent or a run that produces no benchmark is an
 infrastructure failure, not `no_worthwhile_candidate`. The latter verdict is
 only emitted after a measured candidate fails to beat the isolated reference.
+The default Codex invocation treats the generated candidate directory as its
+workspace and explicitly permits that isolated, non-Git directory; the fixed
+specification, corpus, and benchmark remain outside its writable sandbox.
 
 ## Built-in isolated-validation handoff
 

@@ -2,6 +2,9 @@
 
 ## Unreleased (downstream)
 
+- Allow the default autonomous Codex search to enter its intentionally
+  isolated, non-Git candidate workspace while preserving workspace-write
+  sandboxing.
 - The default Codex search command now makes each generated candidate
   directory its writable sandbox. The agent can edit the intended `kernel.py`
   while the repository, fixed harness, specification, corpus, and validation

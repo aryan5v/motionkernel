@@ -207,6 +207,7 @@ def _agent_command(
         str(candidate_dir),
         "-s",
         "workspace-write",
+        "--skip-git-repo-check",
         "--output-last-message",
         str(last_message),
         prompt_path.read_text(encoding="utf-8"),
