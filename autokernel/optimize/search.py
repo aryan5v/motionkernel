@@ -204,7 +204,7 @@ def _agent_command(
         executable,
         "exec",
         "-C",
-        str(repo_root),
+        str(candidate_dir),
         "-s",
         "workspace-write",
         "--output-last-message",

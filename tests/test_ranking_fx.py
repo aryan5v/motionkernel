@@ -86,13 +86,13 @@ def test_rank_regions_salvages_validated_subgraph_from_unsafe_export_parent():
     }
     region = GraphRegion.build(
         name="transformer.blocks.exported",
-        operations=["aten::linear", "aten::mul", "aten::add"],
+        operations=["aten::convolution", "aten::mul", "aten::add"],
         inputs=[TensorMeta("x", (2, 8), (8, 1), "float32", "cpu")],
         outputs=[TensorMeta("out", (2, 8), (8, 1), "float32", "cpu")],
         cuda_time_us=8_000.0,
         self_cuda_time_us=8_000.0,
         calls=32,
-        rejection_reasons=("aten::linear: not in pure-tensor allowlist",),
+        rejection_reasons=("aten::convolution: not in pure-tensor allowlist",),
         attributes={
             "capture_mode": "export",
             "executable_ir": {
@@ -104,7 +104,7 @@ def test_rank_regions_salvages_validated_subgraph_from_unsafe_export_parent():
                 "nodes": [
                     {
                         "id": "n0",
-                        "target": "aten.linear.default",
+                        "target": "aten.convolution.default",
                         "args": [{"ref": "p0"}],
                         "kwargs": {},
                         "meta": meta,
@@ -137,18 +137,18 @@ def test_rank_regions_salvages_validated_subgraph_from_unsafe_export_parent():
     assert candidate.impact_estimate_kind == "parent_region_upper_bound"
     assert candidate.rejection_reasons == ()
     assert candidate.parent_rejection_reasons == (
-        "aten::linear: not in pure-tensor allowlist",
+        "aten::convolution: not in pure-tensor allowlist",
     )
 
 
 def test_rank_regions_keeps_unsafe_parent_rejected_when_derivation_fails():
     region = GraphRegion.build(
         name="transformer.blocks.invalid_export",
-        operations=["aten::linear"],
+        operations=["aten::convolution"],
         inputs=[TensorMeta("x", (2, 8), (8, 1), "float32", "cpu")],
         cuda_time_us=8_000.0,
         self_cuda_time_us=8_000.0,
-        rejection_reasons=("aten::linear: not in pure-tensor allowlist",),
+        rejection_reasons=("aten::convolution: not in pure-tensor allowlist",),
         attributes={"capture_mode": "export", "executable_ir": {"schema_version": 1}},
     )
 

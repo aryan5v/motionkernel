@@ -2,6 +2,16 @@
 
 ## Unreleased (downstream)
 
+- The default Codex search command now makes each generated candidate
+  directory its writable sandbox. The agent can edit the intended `kernel.py`
+  while the repository, fixed harness, specification, corpus, and validation
+  policy remain outside its write boundary.
+- Extended the executable-IR trust boundary with the exact `mean.dim`,
+  `rsqrt.default`, `silu.default`, `gelu.default`, and `linear.default` ATen
+  overloads observed in the LTX transformer profile. RMSNorm, activation, and
+  the measured linear-GELU-linear FeedForward chains can now remain connected
+  search candidates instead of collapsing to lone arithmetic ops;
+  eager-reference parity is covered for each new operation family.
 - Added a fail-closed preflight phase and an immutable run contract to the
   optimize control plane (`autokernel/optimize/preflight.py`). Preflight runs
   before any stage or campaign-state mutation and validates the FastVideo

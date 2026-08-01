@@ -52,9 +52,12 @@ gradient metadata must all be present; a partial recipe fails closed.
 `write_runtime_adapter()` bridges the benchmark candidate's keyword arguments
 to FastVideo's positional boundary-tensor calling convention.
 
-The initial allowlist covers the arithmetic, LayerNorm, cast, broadcast, view,
-transpose, slice, and tuple-selection operations needed to derive Wan
-normalization/residual candidates. Extend it only with captured profile
+The allowlist covers arithmetic, LayerNorm, cast, broadcast, view, transpose,
+slice, and tuple-selection operations needed to derive Wan normalization and
+residual candidates. It also includes the exact `mean.dim`, `rsqrt.default`,
+`silu.default`, `gelu.default`, and `linear.default` overloads observed in the
+LTX transformer profile. The latter keeps the measured three-operation
+FeedForward scope connected. Extend the allowlist only with captured profile
 evidence and exact parity tests.
 
 Each captured region currently represents one bounded shape variant, so its

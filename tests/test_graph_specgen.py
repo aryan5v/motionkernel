@@ -141,6 +141,155 @@ def test_runtime_rejects_non_allowlisted_target(torch_mod) -> None:
         execute_ir(ir, {"x": torch_mod.randn(2, 3)})
 
 
+def test_ltx_rmsnorm_silu_chain_is_allowlisted_and_matches_eager(torch_mod) -> None:
+    """Exact overloads observed in the LTX transformer remain executable."""
+    meta = _meta((2, 4))
+    ir = _ir(
+        [_input("x", (2, 4))],
+        [
+            _node(
+                "square",
+                "aten.pow.Tensor_Scalar",
+                [_ref("x"), _const(2)],
+                meta=meta,
+            ),
+            _node(
+                "mean",
+                "aten.mean.dim",
+                [_ref("square"), {"list": [_const(-1)]}, _const(True)],
+                meta=_meta((2, 1)),
+            ),
+            _node(
+                "epsilon",
+                "aten.add.Tensor",
+                [_ref("mean"), _const(1e-6)],
+                meta=_meta((2, 1)),
+            ),
+            _node(
+                "inverse_rms",
+                "aten.rsqrt.default",
+                [_ref("epsilon")],
+                meta=_meta((2, 1)),
+            ),
+            _node(
+                "normalized",
+                "aten.mul.Tensor",
+                [_ref("x"), _ref("inverse_rms")],
+                meta=meta,
+            ),
+            _node(
+                "activated",
+                "aten.silu.default",
+                [_ref("normalized")],
+                meta=meta,
+            ),
+        ],
+        [_ref("activated")],
+    )
+    x = torch_mod.randn(2, 4)
+
+    actual = execute_ir(ir, {"x": x})
+    expected = torch_mod.nn.functional.silu(
+        x * torch_mod.rsqrt(torch_mod.mean(x.pow(2), dim=-1, keepdim=True) + 1e-6)
+    )
+
+    torch_mod.testing.assert_close(actual, expected)
+    derived = derive_safe_subregion(_region_for(ir, _operations_for(ir)))
+    assert [node.target for node in derived.ir.nodes] == [
+        "aten.pow.Tensor_Scalar",
+        "aten.mean.dim",
+        "aten.add.Tensor",
+        "aten.rsqrt.default",
+        "aten.mul.Tensor",
+        "aten.silu.default",
+    ]
+
+
+def test_ltx_gelu_overload_is_allowlisted_and_matches_eager(torch_mod) -> None:
+    ir = _ir(
+        [_input("x", (2, 4))],
+        [
+            _node(
+                "activated",
+                "aten.gelu.default",
+                [_ref("x")],
+                kwargs={"approximate": _const("tanh")},
+                meta=_meta((2, 4)),
+            )
+        ],
+        [_ref("activated")],
+    )
+    x = torch_mod.randn(2, 4)
+
+    actual = execute_ir(ir, {"x": x})
+    expected = torch_mod.nn.functional.gelu(x, approximate="tanh")
+
+    torch_mod.testing.assert_close(actual, expected)
+    derived = derive_safe_subregion(_region_for(ir, _operations_for(ir)))
+    assert [node.target for node in derived.ir.nodes] == ["aten.gelu.default"]
+
+
+def test_ltx_linear_gelu_linear_chain_is_allowlisted_and_matches_eager(
+    torch_mod,
+) -> None:
+    """The measured LTX FeedForward scope remains one connected candidate."""
+    ir = _ir(
+        [
+            _input("x", (2, 4)),
+            _input("weight_in", (8, 4)),
+            _input("bias_in", (8,)),
+            _input("weight_out", (4, 8)),
+            _input("bias_out", (4,)),
+        ],
+        [
+            _node(
+                "project_in",
+                "aten.linear.default",
+                [_ref("x"), _ref("weight_in"), _ref("bias_in")],
+                meta=_meta((2, 8)),
+            ),
+            _node(
+                "activated",
+                "aten.gelu.default",
+                [_ref("project_in")],
+                kwargs={"approximate": _const("tanh")},
+                meta=_meta((2, 8)),
+            ),
+            _node(
+                "project_out",
+                "aten.linear.default",
+                [_ref("activated"), _ref("weight_out"), _ref("bias_out")],
+                meta=_meta((2, 4)),
+            ),
+        ],
+        [_ref("project_out")],
+    )
+    inputs = {
+        "x": torch_mod.randn(2, 4),
+        "weight_in": torch_mod.randn(8, 4),
+        "bias_in": torch_mod.randn(8),
+        "weight_out": torch_mod.randn(4, 8),
+        "bias_out": torch_mod.randn(4),
+    }
+
+    actual = execute_ir(ir, inputs)
+    hidden = torch_mod.nn.functional.linear(
+        inputs["x"], inputs["weight_in"], inputs["bias_in"]
+    )
+    hidden = torch_mod.nn.functional.gelu(hidden, approximate="tanh")
+    expected = torch_mod.nn.functional.linear(
+        hidden, inputs["weight_out"], inputs["bias_out"]
+    )
+
+    torch_mod.testing.assert_close(actual, expected)
+    derived = derive_safe_subregion(_region_for(ir, _operations_for(ir)))
+    assert [node.target for node in derived.ir.nodes] == [
+        "aten.linear.default",
+        "aten.gelu.default",
+        "aten.linear.default",
+    ]
+
+
 def _region_for(ir: ExecutableIR, operations: list[str]) -> GraphRegion:
     return GraphRegion.build(
         name="wan_transformer_blocks_shape",
