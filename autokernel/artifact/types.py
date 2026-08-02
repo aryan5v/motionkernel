@@ -17,6 +17,9 @@ import re
 from dataclasses import dataclass
 from typing import Any, Iterable, Mapping, Sequence
 
+from ..attention.identity import AttentionIdentityError, backend_identity
+from .kinds import ATTENTION, SCHEDULE_TRANSFORM, validate_kind_fields
+
 ARTIFACT_SCHEMA_VERSION = 1
 
 MANIFEST_FILENAME = "artifact.json"
@@ -63,7 +66,18 @@ _OPERATION_FIELDS = {
     "selected_node_ids",
     "boundary_refs",
     "output_node_ids",
+    "attention_backend",
+    "attention_config",
+    "transform_family",
+    "transform_policy",
 }
+#: Operation-identity fields every kind carries. Anything outside this set must
+#: be claimed by a registered kind, so a field added to the schema and never
+#: attached to a kind fails validation instead of quietly applying to all of
+#: them.
+_OPERATION_COMMON_FIELDS = frozenset(
+    {"name", "graph_fingerprint", "parent_module", "operations", "target_kind"}
+)
 _SIGNATURE_FIELDS = {"inputs", "outputs"}
 _TENSOR_FIELDS = {"name", "shape", "stride", "dtype", "device_type", "requires_grad"}
 _ENTRY_POINT_FIELDS = {"file", "symbol"}
@@ -103,6 +117,7 @@ _GENERATION_FIELDS = {
     "passed",
     "baseline_ref",
     "candidate_ref",
+    "fidelity",
 }
 _PROMOTION_FIELDS = {"decision", "reason", "decided_at", "campaign"}
 _CAMPAIGN_FIELDS = {"campaign_id", "source", "target_name"}
@@ -527,6 +542,18 @@ class OperationIdentity:
     selected_node_ids: tuple[str, ...] = ()
     boundary_refs: tuple[str, ...] = ()
     output_node_ids: tuple[str, ...] = ()
+    #: Attention targets only: the AttentionBackendEnum member the artifact was
+    #: measured with, and its configuration. Recorded so a run can be refused
+    #: when a different backend actually executes -- FastVideo falls back to
+    #: FlashAttention silently when an optional backend cannot be imported.
+    attention_backend: str | None = None
+    attention_config: Mapping[str, Any] | None = None
+    #: Schedule-transform targets only: which transform family this is, and the
+    #: policy that drives it. The policy lives here rather than in the payload
+    #: because it is the searched parameter -- baking it in as a constant is
+    #: how R4's candidate compiled one call's strides in as constexpr.
+    transform_family: str | None = None
+    transform_policy: Mapping[str, Any] | None = None
 
     @classmethod
     def from_dict(
@@ -544,24 +571,64 @@ class OperationIdentity:
         if not operations:
             raise _fail(source, f"{location}.operations", "must be a non-empty list")
         target_kind = raw.get("target_kind", "module")
-        if target_kind not in {"module", "subgraph"}:
-            raise _fail(
-                source,
-                f"{location}.target_kind",
-                "must be 'module' or 'subgraph'",
+        # Kinds are registered rather than enumerated here, so adding one is a
+        # registration instead of an edit to a conditional every other kind
+        # also reads. See autokernel/artifact/kinds.py.
+        try:
+            validate_kind_fields(
+                target_kind, raw, common=_OPERATION_COMMON_FIELDS
             )
-        rewrite_fields = {
-            "capture_mode",
-            "selected_node_ids",
-            "boundary_refs",
-            "output_node_ids",
-        }
-        if target_kind == "module" and rewrite_fields.intersection(raw):
-            raise _fail(
+        except ValueError as error:
+            raise _fail(source, f"{location}.target_kind", str(error)) from error
+
+        attention_backend: str | None = None
+        attention_config: Mapping[str, Any] | None = None
+        if target_kind == ATTENTION:
+            attention_backend = _text(
+                raw.get("attention_backend"),
                 source,
-                location,
-                "module targets must not declare subgraph rewrite fields",
+                f"{location}.attention_backend",
             )
+            try:
+                backend_identity(attention_backend)
+            except AttentionIdentityError as error:
+                raise _fail(
+                    source, f"{location}.attention_backend", str(error)
+                ) from error
+            raw_config = raw.get("attention_config")
+            if raw_config is not None:
+                attention_config = dict(
+                    _mapping(
+                        raw_config, source, f"{location}.attention_config"
+                    )
+                )
+
+        transform_family: str | None = None
+        transform_policy: Mapping[str, Any] | None = None
+        if target_kind == SCHEDULE_TRANSFORM:
+            transform_family = _text(
+                raw.get("transform_family"),
+                source,
+                f"{location}.transform_family",
+            )
+            transform_policy = dict(
+                _mapping(
+                    raw.get("transform_policy"),
+                    source,
+                    f"{location}.transform_policy",
+                )
+            )
+            # Check the policy now rather than at the first step of a campaign
+            # that has already booked a GPU. Unknown families are left alone --
+            # see validate_transform_policy.
+            from ..transforms.cache import validate_transform_policy
+
+            try:
+                validate_transform_policy(transform_family, transform_policy)
+            except ValueError as error:
+                raise _fail(
+                    source, f"{location}.transform_policy", str(error)
+                ) from error
 
         capture_mode: str | None = None
         selected_node_ids: tuple[str, ...] = ()
@@ -637,6 +704,10 @@ class OperationIdentity:
             selected_node_ids=selected_node_ids,
             boundary_refs=boundary_refs,
             output_node_ids=output_node_ids,
+            attention_backend=attention_backend,
+            attention_config=attention_config,
+            transform_family=transform_family,
+            transform_policy=transform_policy,
         )
 
     def as_dict(self) -> dict[str, Any]:
@@ -646,6 +717,15 @@ class OperationIdentity:
             "parent_module": self.parent_module,
             "operations": list(self.operations),
         }
+        if self.target_kind == ATTENTION:
+            result["target_kind"] = self.target_kind
+            result["attention_backend"] = self.attention_backend
+            if self.attention_config is not None:
+                result["attention_config"] = dict(self.attention_config)
+        if self.target_kind == SCHEDULE_TRANSFORM:
+            result["target_kind"] = self.target_kind
+            result["transform_family"] = self.transform_family
+            result["transform_policy"] = dict(self.transform_policy or {})
         if self.target_kind == "subgraph":
             result.update(
                 {
@@ -943,6 +1023,12 @@ class GenerationEvidence:
     passed: bool
     baseline_ref: str = ""
     candidate_ref: str = ""
+    #: Tiered-fidelity record, present only above tier 1. Carries the declared
+    #: budget, the verdict, and the signed margin for every gated metric, so a
+    #: perceptual promotion can be audited from the manifest alone. Validated
+    #: as a shape here; the authoritative rules live in
+    #: :mod:`autokernel.verification.fidelity`, which owns the contract.
+    fidelity: Mapping[str, Any] | None = None
 
     @classmethod
     def from_dict(
@@ -954,6 +1040,18 @@ class GenerationEvidence:
     ) -> "GenerationEvidence":
         raw = _mapping(raw_value, source, location, non_empty=True)
         _unknown_fields(raw, _GENERATION_FIELDS, source, location)
+        fidelity = raw.get("fidelity")
+        if fidelity is not None:
+            fidelity = dict(
+                _mapping(fidelity, source, f"{location}.fidelity", non_empty=True)
+            )
+            for required in ("budget", "verdict"):
+                if required not in fidelity:
+                    raise _fail(
+                        source,
+                        f"{location}.fidelity",
+                        f"must contain {required!r}",
+                    )
         refs = {}
         for key in ("baseline_ref", "candidate_ref"):
             value = raw.get(key, "")
@@ -971,11 +1069,12 @@ class GenerationEvidence:
                 raw.get("threshold"), source, f"{location}.threshold"
             ),
             passed=_bool(raw.get("passed"), source, f"{location}.passed"),
+            fidelity=fidelity,
             **refs,
         )
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        payload: dict[str, Any] = {
             "workload_id": self.workload_id,
             "steps": self.steps,
             "metric": self.metric,
@@ -985,6 +1084,9 @@ class GenerationEvidence:
             "baseline_ref": self.baseline_ref,
             "candidate_ref": self.candidate_ref,
         }
+        if self.fidelity is not None:
+            payload["fidelity"] = dict(self.fidelity)
+        return payload
 
 
 @dataclass(frozen=True)
