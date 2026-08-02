@@ -1,0 +1,15 @@
+{
+  "schema": "motionkernel.support-run",
+  "schema_version": 1,
+  "workload_id": "wan-t2v-1.3b-480p-attention",
+  "model_id": "Wan-AI/Wan2.1-T2V-1.3B-Diffusers",
+  "family": "wan",
+  "arch": "sm100",
+  "outcome": "no_worthwhile_candidate",
+  "recorded_utc": "2026-08-02T19:00:00+00:00",
+  "evidence": "/mnt/nfs/vlm-aryan/attn-ab-1041",
+  "reason": "SAGE_ATTN (SageAttention 1.0.6) rejected: 0.8031x end-to-end median over 15 timed runs per arm, slower than the FLASH_ATTN baseline, and worst-frame SSIM 0.9353 below the 0.97 tier-2 floor (LPIPS 0.0378 passed). Effective backend verified as SAGE_ATTN. Native-arm CV 0.04%, inside the 3% ceiling. SLURM 1041 (timing), 1051 (fidelity).",
+  "source": {
+    "receipt_terminal": "no_worthwhile_candidate"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "cases": [
+    {
+      "dtype": "bfloat16",
+      "name": "observed",
+      "size": {
+        "case": 1
+      },
+      "tags": [
+        "production",
+        "graph-derived"
+      ],
+      "weight": 195661
+    }
+  ],
+  "operation": "generated_transformer_model_transformer_blocks_09d92c42",
+  "schema_version": 1
+}

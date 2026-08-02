@@ -1,0 +1,15 @@
+{
+  "schema": "motionkernel.support-run",
+  "schema_version": 1,
+  "workload_id": "cosmos25-t2v-2b-704p",
+  "model_id": "KyleShao/Cosmos-Predict2.5-2B-Diffusers",
+  "family": "cosmos25",
+  "arch": "sm100",
+  "outcome": "no_worthwhile_candidate",
+  "recorded_utc": "2026-08-01T00:00:00+00:00",
+  "evidence": "/mnt/nfs/vlm-aryan/cosmos-v1-proof-20260801/overnight/campaign",
+  "reason": "1 measured artifact bundle rejected at finalization (full pipeline completed)",
+  "source": {
+    "receipt_terminal": "no_worthwhile_candidate"
+  }
+}
