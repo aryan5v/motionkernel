@@ -26,14 +26,14 @@ from autokernel.workload.result import (
     write_generation_result,
 )
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 WORKLOADS = REPO_ROOT / "workloads"
 
 
-def test_load_wan_and_ltx_manifests():
+def test_load_packaged_model_manifests():
     wan = load_workload(WORKLOADS / "wan_t2v_1.3b_480p.yaml")
     ltx = load_workload(WORKLOADS / "ltx_480p.yaml")
+    cosmos = load_workload(WORKLOADS / "cosmos25_2b_704p.yaml")
     assert wan.schema_version == WORKLOAD_SCHEMA_VERSION
     assert wan.workload_id == "wan-t2v-1.3b-480p"
     assert wan.model.model_id == "Wan-AI/Wan2.1-T2V-1.3B-Diffusers"
@@ -48,6 +48,17 @@ def test_load_wan_and_ltx_manifests():
     assert ltx.task == "t2v"
     assert ltx.performance is not None
     assert ltx.performance.min_end_to_end_speedup == pytest.approx(1.01)
+
+    assert cosmos.workload_id == "cosmos25-t2v-2b-704p"
+    assert cosmos.model.model_id == "KyleShao/Cosmos-Predict2.5-2B-Diffusers"
+    assert cosmos.sampling.height == 704
+    assert cosmos.sampling.width == 1280
+    assert cosmos.sampling.num_frames == 77
+    assert cosmos.sampling.num_inference_steps == 35
+    assert cosmos.sampling.guidance_scale == pytest.approx(7.0)
+    assert cosmos.sampling.seed == 0
+    assert cosmos.parity is not None
+    assert cosmos.parity.policy == "byte_equal"
 
 
 def test_workload_roundtrip_json(tmp_path):
@@ -76,7 +87,7 @@ def test_generation_request_matches_wan_ab_shape():
 
 def test_rejects_secret_fields():
     payload = load_workload(WORKLOADS / "ltx_480p.yaml").as_dict()
-    payload["runtime"]["password"] = "nope"  # noqa: S105 - rejection fixture
+    payload["runtime"]["password"] = "nope"
     with pytest.raises(WorkloadError, match="secret fields"):
         WorkloadManifest.from_dict(payload)
 

@@ -1,6 +1,12 @@
+# Canonical LTX text-to-video workload for the universal optimization agent.
+# Uses a FastVideo-supported LTX-2 distilled checkpoint so discovery and
+# end-to-end validation do not require LTX-specific fusion annotations.
 schema_version: 1
 workload_id: ltx-t2v-480p
-description: Canonical LTX2 technical-preview workload.
+description: >
+  Canonical LTX proof workload for MotionKernel's model-independent optimizer.
+  Distilled checkpoint keeps overnight GPU budgets practical while still
+  exercising a full FastVideo generation path.
 model:
   model_id: FastVideo/LTX2-Distilled-Diffusers
 task: t2v
@@ -33,4 +39,8 @@ parity:
 performance:
   min_end_to_end_speedup: 1.01
   max_peak_memory_regression: 0.05
-tags: [ltx, t2v, 480p, technical-preview]
+tags:
+  - ltx
+  - t2v
+  - 480p
+  - proof

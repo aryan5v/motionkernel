@@ -102,6 +102,7 @@ def _artifact(argv: list[str]) -> int:
 def _workload(argv: list[str]) -> int:
     root = Path(__file__).resolve().parent / "workloads"
     paths = {
+        "cosmos25_2b_704p": root / "cosmos25_2b_704p.yaml",
         "ltx_480p": root / "ltx_480p.yaml",
         "wan_t2v_1.3b_480p": root / "wan_t2v_1.3b_480p.yaml",
     }

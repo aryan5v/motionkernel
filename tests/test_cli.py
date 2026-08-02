@@ -25,8 +25,16 @@ def test_unknown_command_fails(capsys):
 def test_packaged_workloads_are_listed_and_parseable(capsys):
     assert cli.main(["workload", "list"]) == 0
     listed = json.loads(capsys.readouterr().out)
-    assert set(listed) == {"ltx_480p", "wan_t2v_1.3b_480p"}
+    assert set(listed) == {
+        "cosmos25_2b_704p",
+        "ltx_480p",
+        "wan_t2v_1.3b_480p",
+    }
     assert all(Path(path).is_file() for path in listed.values())
+
+    source_workloads = Path(__file__).resolve().parents[1] / "workloads"
+    for name, packaged_path in listed.items():
+        assert Path(packaged_path).read_bytes() == (source_workloads / f"{name}.yaml").read_bytes()
 
     assert cli.main(["workload", "path", "ltx_480p"]) == 0
     assert Path(capsys.readouterr().out.strip()).is_file()

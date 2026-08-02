@@ -2,6 +2,11 @@
 
 ## Unreleased (downstream)
 
+- Added a packaged Cosmos Predict2.5 2B text-to-video workload using the
+  FastVideo native 704p, 77-frame, 35-step preset. Source and installed workload
+  copies are now required to remain byte-identical, preventing CLI behavior
+  from drifting from repository validation and documentation.
+
 - Allow the default autonomous Codex search to enter its intentionally
   isolated, non-Git candidate workspace while preserving workspace-write
   sandboxing.

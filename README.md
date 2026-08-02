@@ -76,6 +76,10 @@ motionkernel doctor --require-cuda --fastvideo-checkout /path/to/FastVideo
 motionkernel workload list
 ```
 
+The packaged workload catalog includes the proven LTX2 workload plus candidate
+workloads for Wan 2.1 and Cosmos Predict2.5. A candidate workload is a
+reproducible optimization target, not a support or speedup claim.
+
 Run the canonical LTX2 campaign:
 
 ```bash
@@ -568,7 +572,7 @@ motionkernel/
   campaign.py           validate, rank, prepare, and run campaigns
   workload.py           validate and A/B-run FastVideo workload manifests
   discovery.py          validate, ingest, and rank discovery reports
-  workloads/            canonical workload manifests (Wan, LTX)
+  workloads/            canonical workload manifests (Wan, LTX, Cosmos)
 
   profile.py            profile any PyTorch model, rank kernels by GPU time
   extract.py            extract bottleneck kernels into workspace/
