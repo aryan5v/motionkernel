@@ -27,6 +27,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from ..attention.identity import (
+    AttentionFallbackError,
+    AttentionIdentityError,
+    backend_identity,
+    verify_effective_backend,
+)
 from ..verification.fidelity import (
     EXACT,
     FidelityBudget,
@@ -79,6 +85,13 @@ class GenerationOutcome:
     candidate_ref: str = ""
     fidelity: FidelityBudget | None = None
     perceptual: PerceptualEvidence | None = None
+    #: Attention artifacts only. ``declared`` is the backend the artifact was
+    #: measured with; ``effective`` is the one the runtime actually resolved.
+    #: They are compared because FastVideo substitutes FlashAttention silently
+    #: when an optional backend cannot be imported, and a run that measured the
+    #: substitute must not be credited to the declared backend.
+    attention_declared: str | None = None
+    attention_effective: str | None = None
 
     def __post_init__(self) -> None:
         source = "generation outcome"
@@ -122,6 +135,15 @@ class GenerationOutcome:
             raise ArtifactError(
                 f"{source}: perceptual must be a PerceptualEvidence or None"
             )
+        for name in ("attention_declared", "attention_effective"):
+            value = getattr(self, name)
+            if value is not None and not isinstance(value, str):
+                raise ArtifactError(f"{source}: {name} must be a string or None")
+        if self.attention_declared is not None:
+            try:
+                backend_identity(self.attention_declared)
+            except AttentionIdentityError as error:
+                raise ArtifactError(f"{source}: {error}") from error
 
     @property
     def budget(self) -> FidelityBudget:
@@ -168,6 +190,31 @@ class GenerationOutcome:
                 "quarantined",
                 "held: the end-to-end validation stage did not run to completion",
             )
+
+        # An attention artifact is only evidence about the backend that
+        # actually ran. FastVideo falls back to FlashAttention silently when an
+        # optional backend cannot be imported, so a campaign can otherwise
+        # measure the fallback and record it under the requested backend's
+        # name. Checked before anything else: if the wrong implementation ran,
+        # every downstream number describes a different system.
+        if self.attention_declared is not None:
+            try:
+                identity = verify_effective_backend(
+                    self.attention_declared, self.attention_effective
+                )
+            except AttentionFallbackError as error:
+                return ("quarantined", f"held: {error}")
+            if identity.exact is False and self.budget.tier == EXACT:
+                return (
+                    "quarantined",
+                    (
+                        f"held: attention backend {identity.name!r} "
+                        f"({identity.notes}) cannot satisfy a tier 1 (exact) "
+                        f"fidelity budget; declare tier 2 (perceptual) or use "
+                        f"a bit-exact backend"
+                    ),
+                )
+
         budget = self.budget
         verdict = self.fidelity_verdict()
         if not verdict.passed:
@@ -308,6 +355,29 @@ def finalize_bundle(
     directory = Path(bundle_dir)
     manifest = verify_bundle(directory)
     source = str(directory)
+
+    # The bundle, not the caller, decides whether a backend check is required.
+    # GenerationOutcome.attention_declared skips the check when it is None, so
+    # an adapter that simply forgot to populate it would promote an attention
+    # artifact with no verification at all -- the exact fail-open the check
+    # exists to close, one level up. Cross-check against the manifest instead
+    # of trusting the caller to have remembered.
+    declared_on_bundle = getattr(manifest.operation, "attention_backend", None)
+    if declared_on_bundle is not None:
+        if outcome.attention_declared is None:
+            raise ArtifactError(
+                f"artifact bundle {source!r}: operation declares attention "
+                f"backend {declared_on_bundle!r}, but the generation outcome "
+                f"carries none; refusing to finalize an attention artifact "
+                f"without verifying which backend actually ran"
+            )
+        if outcome.attention_declared != declared_on_bundle:
+            raise ArtifactError(
+                f"artifact bundle {source!r}: operation declares attention "
+                f"backend {declared_on_bundle!r} but the generation outcome "
+                f"was measured against {outcome.attention_declared!r}"
+            )
+
     decision, reason = outcome.decide()
 
     current = manifest.promotion.decision

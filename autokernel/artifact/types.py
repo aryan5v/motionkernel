@@ -17,6 +17,9 @@ import re
 from dataclasses import dataclass
 from typing import Any, Iterable, Mapping, Sequence
 
+from ..attention.identity import AttentionIdentityError, backend_identity
+from .kinds import ATTENTION, validate_kind_fields
+
 ARTIFACT_SCHEMA_VERSION = 1
 
 MANIFEST_FILENAME = "artifact.json"
@@ -63,7 +66,16 @@ _OPERATION_FIELDS = {
     "selected_node_ids",
     "boundary_refs",
     "output_node_ids",
+    "attention_backend",
+    "attention_config",
 }
+#: Operation-identity fields every kind carries. Anything outside this set must
+#: be claimed by a registered kind, so a field added to the schema and never
+#: attached to a kind fails validation instead of quietly applying to all of
+#: them.
+_OPERATION_COMMON_FIELDS = frozenset(
+    {"name", "graph_fingerprint", "parent_module", "operations", "target_kind"}
+)
 _SIGNATURE_FIELDS = {"inputs", "outputs"}
 _TENSOR_FIELDS = {"name", "shape", "stride", "dtype", "device_type", "requires_grad"}
 _ENTRY_POINT_FIELDS = {"file", "symbol"}
@@ -528,6 +540,12 @@ class OperationIdentity:
     selected_node_ids: tuple[str, ...] = ()
     boundary_refs: tuple[str, ...] = ()
     output_node_ids: tuple[str, ...] = ()
+    #: Attention targets only: the AttentionBackendEnum member the artifact was
+    #: measured with, and its configuration. Recorded so a run can be refused
+    #: when a different backend actually executes -- FastVideo falls back to
+    #: FlashAttention silently when an optional backend cannot be imported.
+    attention_backend: str | None = None
+    attention_config: Mapping[str, Any] | None = None
 
     @classmethod
     def from_dict(
@@ -545,24 +563,37 @@ class OperationIdentity:
         if not operations:
             raise _fail(source, f"{location}.operations", "must be a non-empty list")
         target_kind = raw.get("target_kind", "module")
-        if target_kind not in {"module", "subgraph"}:
-            raise _fail(
-                source,
-                f"{location}.target_kind",
-                "must be 'module' or 'subgraph'",
+        # Kinds are registered rather than enumerated here, so adding one is a
+        # registration instead of an edit to a conditional every other kind
+        # also reads. See autokernel/artifact/kinds.py.
+        try:
+            validate_kind_fields(
+                target_kind, raw, common=_OPERATION_COMMON_FIELDS
             )
-        rewrite_fields = {
-            "capture_mode",
-            "selected_node_ids",
-            "boundary_refs",
-            "output_node_ids",
-        }
-        if target_kind == "module" and rewrite_fields.intersection(raw):
-            raise _fail(
+        except ValueError as error:
+            raise _fail(source, f"{location}.target_kind", str(error)) from error
+
+        attention_backend: str | None = None
+        attention_config: Mapping[str, Any] | None = None
+        if target_kind == ATTENTION:
+            attention_backend = _text(
+                raw.get("attention_backend"),
                 source,
-                location,
-                "module targets must not declare subgraph rewrite fields",
+                f"{location}.attention_backend",
             )
+            try:
+                backend_identity(attention_backend)
+            except AttentionIdentityError as error:
+                raise _fail(
+                    source, f"{location}.attention_backend", str(error)
+                ) from error
+            raw_config = raw.get("attention_config")
+            if raw_config is not None:
+                attention_config = dict(
+                    _mapping(
+                        raw_config, source, f"{location}.attention_config"
+                    )
+                )
 
         capture_mode: str | None = None
         selected_node_ids: tuple[str, ...] = ()
@@ -638,6 +669,8 @@ class OperationIdentity:
             selected_node_ids=selected_node_ids,
             boundary_refs=boundary_refs,
             output_node_ids=output_node_ids,
+            attention_backend=attention_backend,
+            attention_config=attention_config,
         )
 
     def as_dict(self) -> dict[str, Any]:
@@ -647,6 +680,11 @@ class OperationIdentity:
             "parent_module": self.parent_module,
             "operations": list(self.operations),
         }
+        if self.target_kind == ATTENTION:
+            result["target_kind"] = self.target_kind
+            result["attention_backend"] = self.attention_backend
+            if self.attention_config is not None:
+                result["attention_config"] = dict(self.attention_config)
         if self.target_kind == "subgraph":
             result.update(
                 {

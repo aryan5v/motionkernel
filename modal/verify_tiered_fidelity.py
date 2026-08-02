@@ -37,7 +37,7 @@ APP_NAME = "motionkernel-tiered-fidelity-verify"
 
 #: The Track B commit under test. Pinned rather than tracking a branch so a
 #: verification receipt names exactly what it verified.
-MOTIONKERNEL_COMMIT = "30e9bc9bea4a3fb3d4b39f4579021aece6123cec"
+MOTIONKERNEL_COMMIT = "0e6bbb8"
 
 #: The merge-base on ``main``. A failure that reproduces here is not ours, and
 #: saying so requires running it rather than assuming it.
@@ -148,7 +148,7 @@ def tier_gates_only() -> str:
     Faster feedback loop while iterating on the contract itself.
     """
     receipt = _run_pytest(
-        ["tests/test_fidelity_tiers.py", "tests/test_perceptual_harness.py", "-v"]
+        ["tests/test_fidelity_tiers.py", "tests/test_perceptual_harness.py", "tests/test_attention_artifacts.py", "-v"]
     )
     rendered = json.dumps(receipt, indent=2, sort_keys=True)
     print(rendered)

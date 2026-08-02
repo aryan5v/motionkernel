@@ -1,0 +1,86 @@
+# Wan 1.3B with the attention backend as the A/B variable.
+#
+# The native arm pins FLASH_ATTN and the optimized arm selects a different
+# backend, so the two runs differ in exactly one thing: which attention
+# implementation executes. Both arms pin the backend explicitly rather than
+# letting one fall through to automatic selection -- an unpinned baseline would
+# make the comparison depend on whatever the selector happened to choose.
+#
+# The fidelity budget is tier 2 and that is not a preference. Every attention
+# backend worth measuring quantizes the attention product or skips blocks, so
+# none can reproduce an eager reference bitwise. Under tier 1 they are all
+# rejected before they are benchmarked.
+schema_version: 1
+workload_id: wan-t2v-1.3b-480p-attention
+description: >
+  Wan 2.1 1.3B T2V with the attention backend as the searched dimension.
+  Native pins FLASH_ATTN; optimized selects the candidate backend. Promotion is
+  gated on tier-2 perceptual evidence against a fixed-seed frame set, because a
+  bitwise contract would disqualify every candidate by construction.
+model:
+  model_id: Wan-AI/Wan2.1-T2V-1.3B-Diffusers
+task: t2v
+prompt: >
+  A curious raccoon peers through a vibrant field of yellow sunflowers, soft
+  natural light, steady cinematic camera.
+sampling:
+  height: 480
+  width: 832
+  num_frames: 49
+  num_inference_steps: 20
+  guidance_scale: 5.0
+  seed: 1024
+  dtype: bfloat16
+runtime:
+  num_gpus: 1
+  use_fsdp_inference: false
+  dit_cpu_offload: false
+  vae_cpu_offload: false
+  text_encoder_cpu_offload: true
+  pin_cpu_memory: false
+measurement:
+  # 15 timed runs per arm. R4 recorded a 0.8327x at runs=2 that reversed at
+  # runs=5, on a native baseline spanning 38.4% within one trial; anything
+  # below 15 on this cluster is not a measurement.
+  warmups: 1
+  runs: 15
+  save_frames: true
+  save_video: false
+parity:
+  # Still declared, and still the numeric contract. It will fail for any real
+  # candidate -- that is expected, and tier 2 is what decides promotion.
+  policy: byte_equal
+fidelity:
+  tier: perceptual
+  # Thresholds are for this workload at this resolution and step count. They
+  # are deliberately not copied from another workload: a 1.3B model at 480p and
+  # a 14B at 720p do not share a perceptual noise floor.
+  min_ssim: 0.97
+  max_lpips: 0.05
+  frame_set: wan-t2v-1.3b-480p-seed1024
+  seed: 1024
+performance:
+  # The roadmap's attention target. Deliberately higher than the 1.01x used for
+  # kernel artifacts: a whole-backend swap that only clears 1.01x is not worth
+  # the fidelity cost it charges.
+  min_end_to_end_speedup: 1.3
+  max_peak_memory_regression: 0.05
+mode_env:
+  native:
+    FASTVIDEO_ATTENTION_BACKEND: FLASH_ATTN
+  optimized:
+    # SAGE_ATTN resolves to sageattention (PyPI 1.0.6 builds and runs on
+    # sm100/GB200 -- verified, SLURM 1032). Note this is SageAttention v1, not
+    # v2: v2 needs a source build and has not been validated here.
+    #
+    # If the package is absent, FastVideo substitutes FLASH_ATTN silently and
+    # the "candidate" arm measures the baseline. The promotion gate refuses
+    # that, so a mis-provisioned node produces a quarantine rather than a
+    # fabricated speedup.
+    FASTVIDEO_ATTENTION_BACKEND: SAGE_ATTN
+tags:
+  - wan
+  - t2v
+  - 480p
+  - attention
+  - tier2
