@@ -7,6 +7,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+
+def default_repo_root() -> Path:
+    """Resolve the runtime harness root in a checkout or installed wheel."""
+    source_root = Path(__file__).resolve().parents[2]
+    if (source_root / "bench.py").is_file():
+        return source_root
+    packaged_runtime = Path(__file__).resolve().parents[1] / "_runtime"
+    if (packaged_runtime / "bench.py").is_file():
+        return packaged_runtime
+    # Let preflight produce its structured missing-entrypoint error.
+    return source_root
+
 # Ordered campaign stages (linear control plane).
 PIPELINE_STAGES: tuple[str, ...] = (
     "baseline",

@@ -33,6 +33,8 @@ from autokernel.specgen import (
 from autokernel.verification.policy import ParityPolicy
 from autokernel.workload import load_workload
 
+from .types import default_repo_root
+
 
 class BuiltinSearchError(RuntimeError):
     """Search or isolated validation could not satisfy its contract."""
@@ -318,7 +320,7 @@ def search_candidates(
     config: Mapping[str, Any],
 ) -> dict[str, Any]:
     """Run the configured coding agent, then measure every resulting kernel."""
-    repo_root = Path(str(config.get("repo_root") or Path(__file__).parents[2])).resolve()
+    repo_root = Path(str(config.get("repo_root") or default_repo_root())).resolve()
     baseline = str(config.get("baseline") or "eager")
     parity_policy, max_absolute_error = _parity_settings(config)
     configured = config.get("search_agent_command")
@@ -500,7 +502,7 @@ def validate_candidates(
     config: Mapping[str, Any],
 ) -> dict[str, Any]:
     """Independently validate searched kernels and build package requests."""
-    repo_root = Path(str(config.get("repo_root") or Path(__file__).parents[2])).resolve()
+    repo_root = Path(str(config.get("repo_root") or default_repo_root())).resolve()
     baseline = str(config.get("baseline") or "eager")
     parity_policy, max_absolute_error = _parity_settings(config)
     workload = load_workload(Path(str(config["workload"])))
