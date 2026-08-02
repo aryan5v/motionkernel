@@ -293,3 +293,103 @@ high-frequency region can pass gate 5, however good its kernel is.
    does not replay the parent graph.
 3. Or select regions whose per-call saving exceeds ~3.1 ms. At 124 µs, this
    transformer subregion is 25× short.
+
+---
+
+## 7. Unblocking gate 5 (SLURM 987-998)
+
+Gate 5 failed at 0.7629x because the dispatcher executed the rewritten export
+graph in eager FX. Profiling attributed it precisely, in situ:
+
+| phase | mean/call |
+|---|---|
+| `shadow.native_forward` (what we replaced) | 8.18 ms |
+| `subgraph.execute` (eager replay) | **11.57 ms** |
+| flatten + validate + unflatten + shape_key | 0.26 ms |
+
+The plumbing was negligible. The op histogram explained the rest: the export
+graph is **621 `call_function` nodes per call** (108 `aten.slice`, 68
+`aten._assert_tensor_metadata`, 60 `aten.to.dtype`, ...). At ~5 us of Python
+and dispatcher cost per op that is the whole 3.39 ms. **Attention was not the
+problem** -- it survives capture as a single
+`fastvideo._flash_attn_default_forward` op, so nothing was being silently
+substituted.
+
+### The fix
+
+Replay the rewritten graph from a `torch.cuda.CUDAGraph` capture. A CUDA graph
+runs the same kernels with the same parameters in the same order, so it is
+bitwise identical **by construction** -- which is why it was chosen over a
+compiler backend, whose fusion or reassociation would put `byte_equal` at risk.
+
+Getting there took four real bugs, each found by measurement rather than
+reasoning:
+
+1. Every capture failed with `runtime input 10 is bool, not a tensor`. Export
+   flattens Python scalars through as graph inputs; they are constants to bake
+   in, not a reason to decline. **The fast path had never engaged once**, which
+   means the 1.382 ms/call "improvement" measured before this was node
+   variance.
+2. Sharing one `graph_pool_handle` across the stack's 48 blocks tripped the
+   allocator's `use_count > 0` assert: every graph keeps its outputs alive, so
+   the pool is never free when the next capture starts. Each capture now gets
+   its own pool.
+3. A bool among the *outputs* needed the same treatment.
+4. `aten._assert_tensor_metadata` nodes (68/call) are stripped -- they compute
+   nothing.
+
+### Correctness work after review
+
+A review of the capture path found defects a `byte_equal` workload cannot
+carry. All are fixed:
+
+- **Captured parameter addresses were never re-checked.** FSDP2's `reshard`
+  frees the all-gathered storage a capture recorded pointers into; the next
+  replay would read freed memory. Every bound `get_attr` tensor's identity is
+  now recorded and re-checked per replay.
+- **Non-tensor outputs were returned uncloned** on the assumption that "not a
+  Tensor" means "immutable". A list or dict leaf would have handed back the
+  graph's own static buffers. Only `None` and scalars qualify now.
+- **Pinned inputs were validated by `data_ptr` alone**, which folds in
+  `storage_offset` but says nothing about strides -- a permuted view reusing
+  the same allocator block passed every check while the captured kernels read
+  elements in a different order. Pinning is now on
+  `(data_ptr, shape, stride, dtype, device, storage_offset)`.
+- An aborted capture never called `graph.reset()`, pinning its pool for the run.
+- `"warming up"` was signalled by **comparing an exception message string**;
+  rewording it would have turned every warmup into a permanent disable.
+
+Most importantly, the argument that a capture *must* be bitwise identical is
+now **checked rather than asserted**: the graph contains one node export did
+not functionalize -- the artifact's own entry point -- so purity is an
+assumption about third-party code. After capture the runner replays once, runs
+the eager graph, and refuses the capture unless every output is bitwise equal.
+
+---
+
+## 8. V1 gate status: PROVEN
+
+Artifact `mk-2c92e356aa34bc0d-7df21b47-sm100`, dispatched alone, 15 timed runs
+per arm (SLURM 997), promoted by the real finalizer (SLURM 998).
+
+| # | gate | result |
+|---|---|---|
+| 1 | strict independent correctness | **PASS** — bit-exact under `byte_equal`, tolerances not loosened |
+| 2 | packaged and hash verified | **PASS** — verified from disk before and after finalization |
+| 3 | selected and executed, `candidate_calls > 0` | **PASS** — 6143 calls, 0 fallbacks |
+| 4 | `byte_equal` output policy preserved | **PASS** — "frame arrays are byte equal" |
+| 5 | ≥1% end-to-end improvement | **PASS** — **1.0857×** median (1.0306× min-to-min) |
+| 6 | safely promoted | **PASS** — `promotion: promoted`, decision derived from the measurement |
+
+Native median 3.3646s (stdev 0.1675) → candidate median 3.0991s (stdev 0.0395).
+Peak-memory regression 4.62% against the workload's 5% limit.
+
+Honest note on where the win comes from: the artifact's kernel saves 124 us per
+call, which alone caps end-to-end at ~1.015x. The measured 1.086x is larger
+because CUDA-graphing the block also removes the *whole block's* host-side
+dispatch cost. That acceleration exists only on the artifact path -- without an
+artifact the block is never dispatched and never captured -- so the A/B is
+sound, but the framework contributes more of the gain than the kernel does.
+
+The candidate arm is markedly more reproducible than the baseline (stdev 0.0395
+vs 0.1675), which is itself a consequence of replaying a fixed graph.
