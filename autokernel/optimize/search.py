@@ -651,16 +651,11 @@ def validate_candidates(
                         "baseline_us": float(primary["pytorch_latency_us"]),
                         "candidate_us": float(primary["kernel_latency_us"]),
                         "speedup": speedup,
-                        # What this isolated speedup is worth on the whole
-                        # model, so a reader never has to reconstruct it from
-                        # a region share and an upper bound again.
-                        "region_share_of_e2e": share,
-                        "measured_e2e_improvement": realized,
-                        "impact_basis": impact_basis,
-                        "projected_end_to_end_speedup": projected,
-                        "min_end_to_end_speedup": min_end_to_end_speedup,
-                        "dispatch_overhead_fraction": dispatch_overhead,
-                        "parity_policy": parity_policy,
+                        # Artifact schema 1 is intentionally strict and its
+                        # benchmark object only records isolated harness
+                        # evidence. Whole-model impact remains authoritative in
+                        # the campaign/search receipts until a later artifact
+                        # schema defines fields for it.
                         "max_abs_error": max_abs,
                         "max_rel_error": max_rel,
                         "atol": tolerance.atol,
