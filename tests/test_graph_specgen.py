@@ -457,6 +457,40 @@ def test_derivation_preserves_custom_op_identity_but_excludes_it() -> None:
     assert derived.boundary_refs == ("attention",)
 
 
+def test_derivation_carves_after_opaque_graph_attribute_boundary() -> None:
+    """Producer-side callable attributes must only exclude their consumer."""
+    ir = _ir(
+        [_input("x", (2, 3)), _input("gate", (2, 3))],
+        [
+            _node(
+                "wrapped",
+                "aten.add.Tensor",
+                [{"unsupported": "graph_attribute"}, _ref("x")],
+                meta=_meta((2, 3)),
+            ),
+            _node(
+                "gated",
+                "aten.mul.Tensor",
+                [_ref("wrapped"), _ref("gate")],
+                meta=_meta((2, 3)),
+            ),
+            _node(
+                "residual",
+                "aten.add.Tensor",
+                [_ref("gated"), _ref("x")],
+                meta=_meta((2, 3)),
+            ),
+        ],
+        [_ref("residual")],
+    )
+
+    derived = derive_safe_subregion(_region_for(ir, _operations_for(ir)))
+
+    assert derived.selected_node_ids == ("gated", "residual")
+    assert derived.boundary_refs == ("wrapped", "gate", "x")
+    assert derived.output_node_ids == ("residual",)
+
+
 def _to_fp32(node_id: str, source: str, shape: tuple[int, ...]) -> dict:
     return _node(
         node_id,
