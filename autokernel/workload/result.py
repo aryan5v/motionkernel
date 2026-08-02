@@ -36,6 +36,16 @@ from .types import FORBIDDEN_METADATA_KEYS, WorkloadError
 
 RESULT_SCHEMA_VERSION = 1
 
+#: Comparison payloads (classify_end_to_end output) carry this version.
+#: v2 adds the variance block: per-arm coefficients of variation, the
+#: declared ceiling, and whether the measurement is valid for gating.
+COMPARISON_SCHEMA_VERSION = 2
+
+#: Declared ceiling for the native-arm coefficient of variation. A timed A/B
+#: whose native arm varies more than this is node contention, not evidence
+#: (R4 section 3: a 38.4% native spread reversed per-artifact verdicts).
+DEFAULT_CV_CEILING = 0.03
+
 _TOP_LEVEL_FIELDS = {
     "schema_version",
     "mode",
@@ -441,12 +451,58 @@ def compare_frame_outputs(
     }
 
 
+
+def coefficient_of_variation(values: Sequence[float]) -> float | None:
+    """stdev/mean of one arm's wall times; None when it cannot be measured."""
+    import statistics
+
+    samples = [float(value) for value in values]
+    if len(samples) < 2:
+        return None
+    mean = statistics.fmean(samples)
+    if mean <= 0:
+        return None
+    return statistics.stdev(samples) / mean
+
+
+def _variance_block(
+    native: "GenerationRunResult",
+    optimized: "GenerationRunResult",
+    *,
+    cv_ceiling: float,
+) -> dict[str, Any]:
+    native_cv = coefficient_of_variation(native.wall_seconds)
+    optimized_cv = coefficient_of_variation(optimized.wall_seconds)
+    if native_cv is None:
+        valid, reason = True, "native-arm variance not measured (fewer than two runs)"
+    elif native_cv > cv_ceiling:
+        valid = False
+        reason = (
+            f"native-arm coefficient of variation {native_cv:.4f} exceeds the "
+            f"{cv_ceiling:.2f} ceiling; measurement is node contention, not "
+            "promotion evidence"
+        )
+    else:
+        valid, reason = True, (
+            f"native-arm coefficient of variation {native_cv:.4f} within the "
+            f"{cv_ceiling:.2f} ceiling"
+        )
+    return {
+        "native_cv": native_cv,
+        "optimized_cv": optimized_cv,
+        "cv_ceiling": cv_ceiling,
+        "variance_valid": valid,
+        "variance_reason": reason,
+    }
+
+
 def classify_end_to_end(
     native: GenerationRunResult,
     optimized: GenerationRunResult,
     *,
     min_speedup: float = 1.01,
     max_peak_memory_regression: float = 0.05,
+    cv_ceiling: float = DEFAULT_CV_CEILING,
 ) -> dict[str, Any]:
     """Classify a native-versus-optimized pair without claiming microbench wins."""
     if native.status != "ok" or optimized.status != "ok":
@@ -491,6 +547,7 @@ def classify_end_to_end(
         reason = "change within timing noise / below promotion threshold"
 
     return {
+        "comparison_schema_version": COMPARISON_SCHEMA_VERSION,
         "classification": classification,
         "reason": reason,
         "native_median_wall_seconds": native.median_wall_seconds,
@@ -499,4 +556,5 @@ def classify_end_to_end(
         "min_end_to_end_speedup": min_speedup,
         "peak_memory_regression": memory_regression,
         "max_peak_memory_regression": max_peak_memory_regression,
+        **_variance_block(native, optimized, cv_ceiling=cv_ceiling),
     }

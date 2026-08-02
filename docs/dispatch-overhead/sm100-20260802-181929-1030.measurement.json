@@ -1,0 +1,214 @@
+{
+  "schema": "motionkernel.dispatch-measurement",
+  "schema_version": 1,
+  "created_utc": "2026-08-02T18:28:30.306871+00:00",
+  "workload_id": "ltx-t2v-480p",
+  "model_id": "FastVideo/LTX2-Distilled-Diffusers",
+  "artifact_root": "/shared/ltx-v1-r4-targeted-fix-20260801-203751/transformer-artifacts",
+  "fastvideo_checkout": "/shared/ltx-v1-r4-targeted-fix-20260801-203751/fastvideo",
+  "environment": {
+    "python": "3.12.3",
+    "platform": "Linux-6.8.0-1055-nvidia-64k-aarch64-with-glibc2.39",
+    "executable": "/shared/fastvideo-wan-venv/bin/python",
+    "torch": "2.8.0a0+5228986c39.nv25.06",
+    "cuda_available": true,
+    "cuda": "12.9",
+    "gpu_name": "NVIDIA GB200",
+    "gpu_capability": "10.0",
+    "fastvideo": "0.2.0",
+    "mode_env": {},
+    "mode_requested": "candidate"
+  },
+  "arch": "sm100",
+  "gate": 1.01,
+  "generations_per_arm": 16,
+  "timed_runs_per_arm": 15,
+  "native": {
+    "runs": [
+      3.0799,
+      3.1679,
+      3.0702,
+      3.0688,
+      3.078,
+      3.0927,
+      3.0863,
+      3.1506,
+      3.3867,
+      3.5002,
+      3.3947,
+      3.3655,
+      3.3862,
+      3.1697,
+      3.2547
+    ],
+    "count": 15,
+    "median": 3.1679,
+    "stdev": 0.1502,
+    "min": 3.0688,
+    "max": 3.5002
+  },
+  "candidate": {
+    "runs": [
+      3.024,
+      3.0835,
+      3.0885,
+      3.0662,
+      3.1044,
+      3.0914,
+      3.0914,
+      3.0988,
+      3.1198,
+      3.2314,
+      3.0305,
+      3.0489,
+      3.0295,
+      3.0503,
+      3.0335
+    ],
+    "count": 15,
+    "median": 3.0835,
+    "stdev": 0.0522,
+    "min": 3.024,
+    "max": 3.2314
+  },
+  "parity": {
+    "policy": "byte_equal",
+    "native_shape": [
+      97,
+      480,
+      768,
+      3
+    ],
+    "optimized_shape": [
+      97,
+      480,
+      768,
+      3
+    ],
+    "native_dtype": "uint8",
+    "optimized_dtype": "uint8",
+    "same_shape": true,
+    "passed": true,
+    "reason": "frame arrays are byte equal"
+  },
+  "e2e": {
+    "speedup_median": 1.0274,
+    "speedup_min_to_min": 1.0148
+  },
+  "candidate_calls": 6143,
+  "runtime_fallbacks": 0,
+  "calls_per_generation": 383.94,
+  "shadow_attribution": {
+    "candidate_calls": 1151,
+    "native_forward_mean_ms": 8.8353,
+    "candidate_total_mean_ms": 28.2564,
+    "net_overhead_ms_per_call": 19.4211,
+    "replay_path": "mixed",
+    "replay_mean_ms": 18.9364,
+    "graph_replay_calls": 1133,
+    "eager_execute_calls": 163,
+    "warmup_calls": 144,
+    "declined_captures": {
+      "runtime input 1 moved or changed layout after capture": 1
+    },
+    "plumbing_ms_per_candidate_call": 0.1686,
+    "shape_key_ms_per_candidate_call": 0.1729
+  },
+  "timing_report_path": "/shared/mk-track-d-dispatch-runs/sm100-20260802-181929-1030/profile-shadow/timing.json",
+  "dispatch_diagnostics_path": "/shared/mk-track-d-dispatch-runs/sm100-20260802-181929-1030/candidate/dispatch.json",
+  "e2e_overhead": {
+    "native_median_seconds": 3.1679,
+    "candidate_median_seconds": 3.0835,
+    "calls_per_generation": 384,
+    "kernel_saving_ms_per_call": 0.124,
+    "net_cost_ms_per_call": -0.2198,
+    "overhead_ms_per_call": -0.0958
+  },
+  "breakeven": [
+    {
+      "calls_per_generation": 1,
+      "required_saving_ms_per_call": 31.2696,
+      "required_saving_us_per_call": 31269.55,
+      "overhead_ms_per_call": -0.0958,
+      "gate": 1.01
+    },
+    {
+      "calls_per_generation": 5,
+      "required_saving_ms_per_call": 6.1773,
+      "required_saving_us_per_call": 6177.28,
+      "overhead_ms_per_call": -0.0958,
+      "gate": 1.01
+    },
+    {
+      "calls_per_generation": 10,
+      "required_saving_ms_per_call": 3.0407,
+      "required_saving_us_per_call": 3040.74,
+      "overhead_ms_per_call": -0.0958,
+      "gate": 1.01
+    },
+    {
+      "calls_per_generation": 25,
+      "required_saving_ms_per_call": 1.1588,
+      "required_saving_us_per_call": 1158.82,
+      "overhead_ms_per_call": -0.0958,
+      "gate": 1.01
+    },
+    {
+      "calls_per_generation": 50,
+      "required_saving_ms_per_call": 0.5315,
+      "required_saving_us_per_call": 531.52,
+      "overhead_ms_per_call": -0.0958,
+      "gate": 1.01
+    },
+    {
+      "calls_per_generation": 100,
+      "required_saving_ms_per_call": 0.2179,
+      "required_saving_us_per_call": 217.86,
+      "overhead_ms_per_call": -0.0958,
+      "gate": 1.01
+    },
+    {
+      "calls_per_generation": 200,
+      "required_saving_ms_per_call": 0.061,
+      "required_saving_us_per_call": 61.04,
+      "overhead_ms_per_call": -0.0958,
+      "gate": 1.01
+    },
+    {
+      "calls_per_generation": 384,
+      "required_saving_ms_per_call": -0.0141,
+      "required_saving_us_per_call": -14.11,
+      "overhead_ms_per_call": -0.0958,
+      "gate": 1.01
+    },
+    {
+      "calls_per_generation": 500,
+      "required_saving_ms_per_call": -0.0331,
+      "required_saving_us_per_call": -33.06,
+      "overhead_ms_per_call": -0.0958,
+      "gate": 1.01
+    },
+    {
+      "calls_per_generation": 1000,
+      "required_saving_ms_per_call": -0.0644,
+      "required_saving_us_per_call": -64.43,
+      "overhead_ms_per_call": -0.0958,
+      "gate": 1.01
+    },
+    {
+      "calls_per_generation": 2000,
+      "required_saving_ms_per_call": -0.0801,
+      "required_saving_us_per_call": -80.11,
+      "overhead_ms_per_call": -0.0958,
+      "gate": 1.01
+    },
+    {
+      "calls_per_generation": 5000,
+      "required_saving_ms_per_call": -0.0895,
+      "required_saving_us_per_call": -89.52,
+      "overhead_ms_per_call": -0.0958,
+      "gate": 1.01
+    }
+  ],
+  "status": "ok"
+}
