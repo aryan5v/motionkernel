@@ -24,6 +24,8 @@ Cells whose evidence is older than 30 days are marked
 | hunyuan | `hunyuan-t2v-480p` | *not_attempted* | *not_attempted* |
 | ltx | `ltx-t2v-480p` | [promoted](/mnt/nfs/vlm-aryan/ltx-v1-r4-targeted-fix-20260801-203751) 2026-08-02 | *not_attempted* |
 | wan | `wan-t2v-1.3b-480p` | [no_worthwhile_candidate](/mnt/nfs/vlm-aryan/task3-wan-v1-20260731-r3) 2026-07-31 | *not_attempted* |
+| wan | `wan-t2v-1.3b-480p-attention` | [no_worthwhile_candidate](/mnt/nfs/vlm-aryan/attn-ab-1041) 2026-08-02 | *not_attempted* |
+| wan | `wan-t2v-1.3b-480p-attention-vsa` | [no_worthwhile_candidate](/mnt/nfs/vlm-aryan/vsa-ab-1046) 2026-08-02 | *not_attempted* |
 | wan | `wan-t2v-14b-480p` | *not_attempted* | *not_attempted* |
 
 Isolated operator results are not support claims; a cell only turns
