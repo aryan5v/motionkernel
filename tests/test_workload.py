@@ -57,6 +57,8 @@ def test_load_packaged_model_manifests():
     assert cosmos.sampling.num_inference_steps == 35
     assert cosmos.sampling.guidance_scale == pytest.approx(7.0)
     assert cosmos.sampling.seed == 0
+    assert cosmos.runtime is not None
+    assert cosmos.runtime.text_encoder_cpu_offload is False
     assert cosmos.parity is not None
     assert cosmos.parity.policy == "byte_equal"
 
