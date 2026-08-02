@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from typing import Any, Iterable, Mapping, Sequence
 
 from ..attention.identity import AttentionIdentityError, backend_identity
-from .kinds import ATTENTION, validate_kind_fields
+from .kinds import ATTENTION, SCHEDULE_TRANSFORM, validate_kind_fields
 
 ARTIFACT_SCHEMA_VERSION = 1
 
@@ -68,6 +68,8 @@ _OPERATION_FIELDS = {
     "output_node_ids",
     "attention_backend",
     "attention_config",
+    "transform_family",
+    "transform_policy",
 }
 _SIGNATURE_FIELDS = {"inputs", "outputs"}
 _TENSOR_FIELDS = {"name", "shape", "stride", "dtype", "device_type", "requires_grad"}
@@ -539,6 +541,12 @@ class OperationIdentity:
     #: FlashAttention silently when an optional backend cannot be imported.
     attention_backend: str | None = None
     attention_config: Mapping[str, Any] | None = None
+    #: Schedule-transform targets only: which transform family this is, and the
+    #: policy that drives it. The policy lives here rather than in the payload
+    #: because it is the searched parameter -- baking it in as a constant is
+    #: how R4's candidate compiled one call's strides in as constexpr.
+    transform_family: str | None = None
+    transform_policy: Mapping[str, Any] | None = None
 
     @classmethod
     def from_dict(
@@ -585,6 +593,22 @@ class OperationIdentity:
                         raw_config, source, f"{location}.attention_config"
                     )
                 )
+
+        transform_family: str | None = None
+        transform_policy: Mapping[str, Any] | None = None
+        if target_kind == SCHEDULE_TRANSFORM:
+            transform_family = _text(
+                raw.get("transform_family"),
+                source,
+                f"{location}.transform_family",
+            )
+            transform_policy = dict(
+                _mapping(
+                    raw.get("transform_policy"),
+                    source,
+                    f"{location}.transform_policy",
+                )
+            )
 
         capture_mode: str | None = None
         selected_node_ids: tuple[str, ...] = ()
@@ -662,6 +686,8 @@ class OperationIdentity:
             output_node_ids=output_node_ids,
             attention_backend=attention_backend,
             attention_config=attention_config,
+            transform_family=transform_family,
+            transform_policy=transform_policy,
         )
 
     def as_dict(self) -> dict[str, Any]:
@@ -676,6 +702,10 @@ class OperationIdentity:
             result["attention_backend"] = self.attention_backend
             if self.attention_config is not None:
                 result["attention_config"] = dict(self.attention_config)
+        if self.target_kind == SCHEDULE_TRANSFORM:
+            result["target_kind"] = self.target_kind
+            result["transform_family"] = self.transform_family
+            result["transform_policy"] = dict(self.transform_policy or {})
         if self.target_kind == "subgraph":
             result.update(
                 {
