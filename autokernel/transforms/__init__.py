@@ -23,11 +23,13 @@ from __future__ import annotations
 
 from .cache import (
     SCHEDULE_TRANSFORM,
+    TRANSFORM_FAMILIES,
     CacheDecision,
     CachePolicy,
     CacheStats,
     InputSimilarityCache,
     TransformError,
+    validate_transform_policy,
 )
 
 __all__ = [
@@ -36,5 +38,7 @@ __all__ = [
     "CachePolicy",
     "CacheStats",
     "InputSimilarityCache",
+    "TRANSFORM_FAMILIES",
     "TransformError",
+    "validate_transform_policy",
 ]

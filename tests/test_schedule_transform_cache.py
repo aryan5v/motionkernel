@@ -262,3 +262,48 @@ def test_a_schedule_transform_may_not_carry_subgraph_fields() -> None:
             source="<test>",
             location="operation",
         )
+
+
+# -- issues found in review ---------------------------------------------
+
+
+def test_decide_is_pure_given_the_accumulated_value() -> None:
+    """Accumulation belongs to step(), not to the decision.
+
+    A decision function that advanced the cache could not be called twice for
+    the same step without changing the answer.
+    """
+    cache = _cache(threshold=1.0)
+    cache.step(0, 0.0)
+    before = cache.stats.steps_total
+    first = cache._decide(5, 0.5)
+    second = cache._decide(5, 0.5)
+    assert first == second
+    assert cache.stats.steps_total == before  # nothing advanced
+
+
+def test_a_malformed_policy_is_rejected_when_the_manifest_is_parsed() -> None:
+    """Not at the first step of a campaign that already booked a GPU."""
+    from autokernel.artifact.types import ArtifactError, OperationIdentity
+
+    with pytest.raises(ArtifactError, match="threshold"):
+        OperationIdentity.from_dict(
+            _operation(transform_policy={"threshold": -1.0}),
+            source="<test>",
+            location="operation",
+        )
+
+
+def test_an_unknown_transform_family_is_left_alone() -> None:
+    """The registry lists families this module can check, not those allowed."""
+    from autokernel.artifact.types import OperationIdentity
+
+    parsed = OperationIdentity.from_dict(
+        _operation(
+            transform_family="some_future_family",
+            transform_policy={"anything": 1},
+        ),
+        source="<test>",
+        location="operation",
+    )
+    assert parsed.transform_family == "some_future_family"

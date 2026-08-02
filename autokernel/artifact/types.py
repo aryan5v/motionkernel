@@ -609,6 +609,17 @@ class OperationIdentity:
                     f"{location}.transform_policy",
                 )
             )
+            # Check the policy now rather than at the first step of a campaign
+            # that has already booked a GPU. Unknown families are left alone --
+            # see validate_transform_policy.
+            from ..transforms.cache import validate_transform_policy
+
+            try:
+                validate_transform_policy(transform_family, transform_policy)
+            except ValueError as error:
+                raise _fail(
+                    source, f"{location}.transform_policy", str(error)
+                ) from error
 
         capture_mode: str | None = None
         selected_node_ids: tuple[str, ...] = ()

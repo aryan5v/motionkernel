@@ -38,6 +38,8 @@ from typing import Any
 
 __all__ = [
     "SCHEDULE_TRANSFORM",
+    "TRANSFORM_FAMILIES",
+    "validate_transform_policy",
     "CacheDecision",
     "CachePolicy",
     "CacheStats",
@@ -266,7 +268,16 @@ class InputSimilarityCache:
         self._last_step = step
         self._steps_total += 1
 
-        decision = self._decide(step, float(distance))
+        # Accumulation happens here, not inside the decision, so _decide stays
+        # a pure function of (step, accumulated) and can be reasoned about --
+        # and called in a test -- without moving the cache forward.
+        if step < self.policy.warmup_steps:
+            accumulated = self._accumulated
+        else:
+            accumulated = self._accumulated + float(distance)
+            self._accumulated = accumulated
+
+        decision = self._decide(step, accumulated)
         if decision.compute:
             self._steps_computed += 1
             self._accumulated = 0.0
@@ -282,15 +293,13 @@ class InputSimilarityCache:
                 self._cooldown_remaining = self.policy.cooldown_steps
         return decision
 
-    def _decide(self, step: int, distance: float) -> CacheDecision:
+    def _decide(self, step: int, accumulated: float) -> CacheDecision:
+        """Pure: given the step and the accumulated drift, compute or skip."""
         if step < self.policy.warmup_steps:
             # Structural, not a threshold accident: there is nothing to reuse.
             return CacheDecision(
-                step, True, "warmup: nothing cached yet", self._accumulated
+                step, True, "warmup: nothing cached yet", accumulated
             )
-
-        accumulated = self._accumulated + distance
-        self._accumulated = accumulated
 
         if self._cooldown_remaining > 0:
             return CacheDecision(
@@ -341,3 +350,26 @@ class InputSimilarityCache:
             steps_skipped=self._steps_skipped,
             max_consecutive_skips_used=self._max_run,
         )
+
+
+#: Transform families and the policy type that validates each one. A manifest
+#: naming a known family has its policy checked when the manifest is parsed,
+#: rather than at the first step of a campaign that has already booked a GPU.
+TRANSFORM_FAMILIES: dict[str, Any] = {
+    "input_similarity_cache": CachePolicy,
+}
+
+
+def validate_transform_policy(family: str, policy: Any) -> None:
+    """Validate ``policy`` against ``family``, if the family is known.
+
+    An unknown family is left alone rather than rejected: this registry is
+    deliberately not the list of families that may exist, only the list whose
+    policies this module knows how to check. Rejecting unknown families here
+    would make adding one require editing this file, which is the coupling the
+    kind registry exists to avoid.
+    """
+    validator = TRANSFORM_FAMILIES.get(family)
+    if validator is None:
+        return
+    validator.from_dict(policy)
