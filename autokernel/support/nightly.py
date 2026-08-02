@@ -28,6 +28,9 @@ from typing import Any, Mapping, Sequence
 from autokernel._io import write_json_atomic
 from autokernel.optimize import OptimizeConfig, OptimizeError, run_optimize
 from autokernel.workload import load_workload
+from autokernel.workload.types import RuntimeSpec, dump_workload
+
+import dataclasses
 
 from .evidence import (
     RunRecord,
@@ -71,6 +74,39 @@ def _family_of(workload: Path) -> str:
     return manifest.tags[0] if manifest.tags else manifest.workload_id
 
 
+
+def _derive_discovery_workload(manifest_path: Path, campaign_dir: Path) -> Path:
+    """Write the discovery variant of a workload: CPU offloads disabled.
+
+    The profiler's FX capture conflicts with CPU-offload hooks: after an
+    offloaded text encoder is recaptured, the next generation runs its
+    embedding with CPU inputs against CUDA weights (Wan T5, nightly 1042).
+    The established profiling practice is a no-offload variant
+    (wan_t2v_1.3b_480p_no_offload.yaml). The captured regions -- transformer
+    blocks, VAE -- are the same modules with the same shapes either way, so
+    the variant keeps the base workload_id and the derivation is recorded
+    here and in the campaign output.
+    """
+    manifest = load_workload(manifest_path)
+    runtime = manifest.runtime or RuntimeSpec()
+    derived = dataclasses.replace(
+        manifest,
+        runtime=dataclasses.replace(
+            runtime,
+            dit_cpu_offload=False,
+            vae_cpu_offload=False,
+            text_encoder_cpu_offload=False,
+            image_encoder_cpu_offload=False,
+        ),
+        description=(manifest.description or "") + (
+            " Discovery variant: CPU offloads disabled for capture compatibility."
+        ),
+    )
+    path = campaign_dir / f"{manifest.workload_id}.discovery.yaml"
+    dump_workload(derived, path)
+    return path
+
+
 def run_nightly_target(
     *,
     target: NightlyTarget,
@@ -80,12 +116,14 @@ def run_nightly_target(
     """Run one discovery-only campaign and distill its run record."""
     manifest = load_workload(target.workload)
     campaign_dir = night_dir / manifest.workload_id
+    campaign_dir.mkdir(parents=True, exist_ok=True)
+    discovery_workload = _derive_discovery_workload(target.workload, campaign_dir)
     model = target.model_override or manifest.model.model_id
     receipt = run_optimize(
         OptimizeConfig(
             fastvideo_checkout=config.fastvideo_checkout,
             model=model,
-            workload=target.workload,
+            workload=discovery_workload,
             output=campaign_dir,
             budget_hours=config.budget_hours,
             resume=True,

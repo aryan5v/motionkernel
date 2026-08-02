@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from autokernel.support import NightlyConfig, NightlyTarget, load_run_record, run_nightly
+from autokernel.workload import load_workload
 from conftest import make_fastvideo_checkout, make_workload
 
 
@@ -128,3 +129,47 @@ def test_nightly_requires_targets(tmp_path: Path, repo_root: Path) -> None:
     )
     with pytest.raises(NightlyError):
         run_nightly(config)
+
+
+def test_discovery_variant_disables_offloads_and_keeps_identity(
+    tmp_path: Path, repo_root: Path
+) -> None:
+    from autokernel.support.nightly import _derive_discovery_workload
+
+    workload = make_workload(
+        tmp_path / "workload.json",
+        runtime={
+            "num_gpus": 1,
+            "use_fsdp_inference": False,
+            "dit_cpu_offload": False,
+            "vae_cpu_offload": False,
+            "text_encoder_cpu_offload": True,
+            "image_encoder_cpu_offload": True,
+            "pin_cpu_memory": False,
+        },
+    )
+    derived_path = _derive_discovery_workload(workload, tmp_path / "campaign")
+    derived = load_workload(derived_path)
+    original = load_workload(workload)
+
+    assert derived.workload_id == original.workload_id
+    assert derived.runtime.text_encoder_cpu_offload is False
+    assert derived.runtime.image_encoder_cpu_offload is False
+    assert derived.runtime.dit_cpu_offload is False
+    assert derived.runtime.vae_cpu_offload is False
+    assert "offloads disabled" in (derived.description or "")
+
+
+def test_nightly_campaign_uses_derived_discovery_workload(
+    tmp_path: Path, repo_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _simulate(monkeypatch, "promoted")
+    config = _config(tmp_path, repo_root)
+    report = run_nightly(config)
+
+    campaign = Path(report["results"][0]["campaign_dir"])
+    derived = campaign / "cpu-contract.discovery.yaml"
+    assert derived.is_file()
+    # The campaign config pins the derived workload, not the base one.
+    campaign_config = json.loads((campaign / "config.json").read_text())
+    assert campaign_config["workload"] == str(derived)
