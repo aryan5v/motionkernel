@@ -43,7 +43,11 @@ methods lose to a tuned FlashAttention baseline in this regime
 ($0.80\times$ and $0.52\times$) while structural and perceptual quality
 metrics systematically disagree about them. One transformer artifact was
 promoted end to end ($1.086\times$ median, byte-identical frames, $6{,}143$
-dispatches, zero fallbacks). Every number in this paper traces to a
+dispatches, zero fallbacks).
+% GAP 7 (EVIDENCE_MAP): the 1.086x median and the 1.2514x replication
+% predate the paired measurement protocol. Re-validate before submission
+% or reword to carry the Section 8 protocol caveat.
+Every number in this paper traces to a
 committed, machine-generated measurement record. We argue this promotion
 layer---not kernel generation itself---is the missing infrastructure for
 the era of agent-generated performance code.
