@@ -62,6 +62,50 @@ def test_load_packaged_model_manifests():
     assert cosmos.parity is not None
     assert cosmos.parity.policy == "byte_equal"
 
+    kandinsky = load_workload(WORKLOADS / "kandinsky5_lite_t2v_512p.yaml")
+    assert kandinsky.workload_id == "kandinsky5-t2v-lite-512p"
+    assert kandinsky.model.model_id == (
+        "kandinskylab/Kandinsky-5.0-T2V-Lite-sft-5s-Diffusers"
+    )
+    assert kandinsky.task == "t2v"
+    # Geometry must stay pinned to FastVideo's kandinsky5_t2v_lite_5s preset.
+    # Only num_inference_steps is allowed to deviate (50 -> 8); a change to any
+    # other sampling field silently invalidates every claim the campaign makes
+    # about running the published configuration.
+    assert kandinsky.sampling.height == 512
+    assert kandinsky.sampling.width == 768
+    assert kandinsky.sampling.num_frames == 121
+    assert kandinsky.sampling.fps == 24
+    assert kandinsky.sampling.guidance_scale == pytest.approx(5.0)
+    assert kandinsky.sampling.dtype == "bfloat16"
+    assert kandinsky.sampling.num_inference_steps == 8
+    assert kandinsky.runtime is not None
+    assert kandinsky.runtime.num_gpus == 1
+    assert kandinsky.runtime.text_encoder_cpu_offload is False
+    assert kandinsky.parity is not None
+    assert kandinsky.parity.policy == "byte_equal"
+    assert kandinsky.performance is not None
+    assert kandinsky.performance.min_end_to_end_speedup == pytest.approx(1.01)
+    assert kandinsky.measurement is not None
+    assert kandinsky.measurement.runs >= 3
+
+
+def test_packaged_workloads_match_repo_copies():
+    """``autokernel/workloads`` ships the wheel copy of ``workloads``.
+
+    They are two files, not one: a manifest edited in only one place would let
+    an installed MotionKernel optimize a different generation than the one the
+    repository's evidence describes.
+    """
+    packaged = REPO_ROOT / "autokernel" / "workloads"
+    repo_manifests = sorted(p.name for p in WORKLOADS.glob("*.yaml"))
+    assert repo_manifests, "no workload manifests found"
+    assert repo_manifests == sorted(p.name for p in packaged.glob("*.yaml"))
+    for name in repo_manifests:
+        assert (WORKLOADS / name).read_bytes() == (packaged / name).read_bytes(), (
+            f"workloads/{name} and autokernel/workloads/{name} differ"
+        )
+
 
 def test_workload_roundtrip_json(tmp_path):
     wan = load_workload(WORKLOADS / "wan_t2v_1.3b_480p.yaml")

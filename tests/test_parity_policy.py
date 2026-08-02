@@ -369,3 +369,53 @@ def test_absolute_error_ceiling_is_forwarded_when_configured() -> None:
         parity_policy=policy, max_absolute_error=ceiling,
     )
     assert command[command.index("--max-absolute-error") + 1] == "0.5"
+
+
+def test_search_prompt_states_the_parity_policy_and_its_consequences() -> None:
+    """The search agent must be told the policy it is being judged under.
+
+    The prompt is the only place an autonomous agent learns that approximate
+    intrinsics are disqualifying. R4's four VAE artifacts all shipped
+    ``rcp.approx``/``tanh.approx`` against a ``byte_equal`` workload; the agent
+    was never told, and every one of them failed full-generation parity exactly
+    as it had to.
+    """
+    from pathlib import Path
+
+    from autokernel.optimize.search import _agent_prompt
+
+    generated = {
+        name: Path(f"/candidate/{name}")
+        for name in ("spec", "corpus", "kernel", "manifest")
+    }
+    prompt = _agent_prompt(
+        {
+            "fingerprint": "deadbeef",
+            "share_of_e2e": 0.5,
+            "estimated_max_e2e_improvement": 0.45,
+        },
+        generated,
+        ["python", "bench.py"],
+        parity_policy="byte_equal",
+    )
+    assert "byte_equal" in prompt
+    assert ".approx" in prompt
+    assert "ftz" in prompt
+    # A measurement that never ran the candidate is not evidence.
+    assert "torch.cuda.is_available()" in prompt
+    # The two shipped-kernel defects R4 documented.
+    assert "stride" in prompt
+    assert "guard" in prompt
+
+
+def test_search_prompt_defaults_to_the_strictest_policy() -> None:
+    from pathlib import Path
+
+    from autokernel.optimize.search import _agent_prompt
+
+    generated = {
+        name: Path(f"/candidate/{name}")
+        for name in ("spec", "corpus", "kernel", "manifest")
+    }
+    prompt = _agent_prompt({"fingerprint": "f"}, generated, ["bench"])
+    assert "byte_equal" in prompt

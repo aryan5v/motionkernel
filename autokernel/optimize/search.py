@@ -236,6 +236,8 @@ def _agent_prompt(
     candidate: Mapping[str, Any],
     generated: Mapping[str, Path],
     benchmark: Sequence[str],
+    *,
+    parity_policy: str = "byte_equal",
 ) -> str:
     # Discovery emits ``estimated_max_e2e_improvement`` as a fraction. The
     # prompt used to read ``estimated_max_e2e_improvement_pct``, a key nothing
@@ -266,6 +268,31 @@ Triton, torch.compile, and fused PyTorch implementations as appropriate for the
 captured operations and observed shapes. Leave the fastest passing candidate in
 kernel.py. If no implementation beats the reference, restore the best passing
 version and say so in the final message.
+
+Before you accept ANY benchmark number, confirm it was produced by real GPU
+execution: `torch.cuda.is_available()` must be true, the benchmark result must
+report a CUDA device, and the run must not have fallen back to the reference.
+A measurement that did not execute your candidate is not evidence. Never report
+a speedup you did not observe from a completed benchmark run.
+
+This campaign's output parity policy is `{parity_policy}`. Under `byte_equal`
+the following are disqualifying, regardless of how fast they are:
+  * approximate hardware intrinsics ({{rcp,tanh,exp2,sqrt}}.approx, `.ftz`
+    denormal flushing, fast-math reassociation);
+  * any change to accumulation order or dtype that alters the result bits.
+Bit-exactness is a hard requirement, not a tolerance to be tuned.
+
+Two further rules exist because real campaigns have shipped kernels that broke
+them, and both failures were invisible in the benchmark that accepted them:
+  * Read every shape, stride, and dtype from the tensors at run time. Never
+    bake a shape or a stride observed in one capture into the kernel as a
+    constant -- the validation stages allocate freshly contiguous tensors with
+    the same shapes and different strides, and a baked-in stride reads the
+    wrong addresses at full speed.
+  * Keep dispatch guards intact. If you use torch.compile, call the compiled
+    function; do not stash and call its inner compiled entry to skip the guard
+    lookup. That both breaks on the first shape change and makes the speedup
+    an unfair comparison against a guarded baseline.
 """
 
 
@@ -358,7 +385,10 @@ def search_candidates(
         )
         prompt_path = work / "prompt.md"
         prompt_path.write_text(
-            _agent_prompt(candidate, generated, benchmark), encoding="utf-8"
+            _agent_prompt(
+                candidate, generated, benchmark, parity_policy=parity_policy
+            ),
+            encoding="utf-8",
         )
         last_message = work / "agent_last_message.md"
         log_path = work / "agent.log"

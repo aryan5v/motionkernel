@@ -1,0 +1,73 @@
+# Canonical Kandinsky-5.0 Lite T2V optimization workload.
+#
+# Geometry matches FastVideo's kandinsky5_t2v_lite_5s preset exactly: 512x768,
+# 121 frames, fps 24, guidance 5.0. The campaign changes exactly ONE preset
+# value, the denoising step count, so a full resumable campaign -- baseline,
+# profiling, autonomous search, isolated validation, and end-to-end A/B -- fits
+# an overnight GPU budget.
+#
+# Deviation from kandinsky5_t2v_lite_5s (fastvideo/pipelines/basic/kandinsky5/presets.py):
+#   num_inference_steps   50 -> 8      (sole deviation)
+#
+# Everything else is preset-identical: height, width, num_frames (31 latent
+# frames at HunyuanVAE temporal ratio 4), fps, guidance_scale, and dtype. Step
+# count is the one knob that scales transformer work linearly without changing
+# a single tensor shape, the CFG branch structure, the captured graph, or the
+# dispatch path, so a per-call kernel result measured here transfers to the
+# published 50-step configuration unchanged.
+#
+# Because the step count is reduced, this workload makes NO claim about the
+# visual quality of the published preset; it is a performance and correctness
+# vehicle at the published resolution and clip length.
+schema_version: 1
+workload_id: kandinsky5-t2v-lite-512p
+description: >
+  Reduced-step Kandinsky-5.0 Lite T2V workload at the preset 512x768x121
+  geometry, used for model-independent discovery, autonomous kernel search, and
+  end-to-end native-versus-candidate validation. Support is claimed only after
+  every promotion gate passes on a recorded GPU environment.
+model:
+  model_id: kandinskylab/Kandinsky-5.0-T2V-Lite-sft-5s-Diffusers
+task: t2v
+prompt: >
+  A curious raccoon peers through a vibrant field of yellow sunflowers, its
+  eyes wide with interest. The playful yet serene atmosphere is complemented
+  by soft natural light filtering through the petals. Mid-shot, warm and
+  cheerful tones.
+sampling:
+  height: 512
+  width: 768
+  num_frames: 121
+  num_inference_steps: 8
+  guidance_scale: 5.0
+  seed: 1024
+  fps: 24
+  dtype: bfloat16
+runtime:
+  num_gpus: 1
+  use_fsdp_inference: false
+  dit_cpu_offload: false
+  vae_cpu_offload: false
+  # Qwen2.5-VL text encoder stays resident: offloading it re-materializes ~15GB
+  # per generation and dominates the wall-time variance the campaign measures.
+  text_encoder_cpu_offload: false
+  pin_cpu_memory: true
+# Two back-to-back native probes on the campaign node measured 36.880s and
+# 36.871s (0.03% spread), so 10 synchronized timed runs per arm resolve the
+# 1.01x gate with wide margin while leaving budget for repeated A/B trials.
+measurement:
+  warmups: 1
+  runs: 10
+  save_frames: true
+  save_video: false
+parity:
+  policy: byte_equal
+performance:
+  min_end_to_end_speedup: 1.01
+  max_peak_memory_regression: 0.05
+tags:
+  - kandinsky5
+  - t2v
+  - lite
+  - 512p
+  - candidate
