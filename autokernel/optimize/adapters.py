@@ -29,7 +29,7 @@ from autokernel.discovery import (
     write_discovery_report,
 )
 from autokernel.specgen import SpecGenerationError, write_generated_artifacts
-from autokernel.workload import WorkloadError, load_workload
+from autokernel.workload import ParitySpec, WorkloadError, load_workload
 from autokernel.workload.launcher import run_ab, run_mode
 from autokernel.workload.result import (
     classify_end_to_end,
@@ -517,20 +517,15 @@ def _end_to_end_validate(run_dir: Path, config: Mapping[str, Any]) -> dict[str, 
         min_speedup=threshold,
         max_peak_memory_regression=memory_limit,
     )
+    frame_atol, frame_rtol = (
+        workload.parity or ParitySpec()
+    ).frame_tolerances()
     parity = compare_frame_outputs(
         native.frames_path,
         candidate.frames_path,
         policy=workload.parity.policy if workload.parity else "byte_equal",
-        atol=(
-            workload.parity.atol
-            if workload.parity and workload.parity.atol is not None
-            else 0.0
-        ),
-        rtol=(
-            workload.parity.rtol
-            if workload.parity and workload.parity.rtol is not None
-            else 0.0
-        ),
+        atol=frame_atol,
+        rtol=frame_rtol,
     )
     selected, diagnostics = _dispatch_selected(diagnostics_path)
     classification = performance.get("classification")

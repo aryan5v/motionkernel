@@ -24,7 +24,7 @@ from .result import (
     compare_frame_outputs,
     load_generation_result,
 )
-from .types import WorkloadError, WorkloadManifest, load_workload
+from .types import ParitySpec, WorkloadError, WorkloadManifest, load_workload
 
 DEFAULT_LAUNCHER_RELATIVE = Path(
     "examples/inference/optimizations/generation_launcher.py"
@@ -357,20 +357,15 @@ def run_ab(
                 ),
             )
             parity_policy = manifest.parity
+            frame_atol, frame_rtol = (
+                parity_policy or ParitySpec()
+            ).frame_tolerances()
             parity = compare_frame_outputs(
                 results["native"].frames_path,
                 results["optimized"].frames_path,
                 policy=parity_policy.policy if parity_policy else "byte_equal",
-                atol=(
-                    parity_policy.atol
-                    if parity_policy and parity_policy.atol is not None
-                    else 0.0
-                ),
-                rtol=(
-                    parity_policy.rtol
-                    if parity_policy and parity_policy.rtol is not None
-                    else 0.0
-                ),
+                atol=frame_atol,
+                rtol=frame_rtol,
             )
             comparison["parity"] = parity
             if not parity["passed"]:

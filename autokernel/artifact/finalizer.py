@@ -273,7 +273,7 @@ def finalize_bundle(
             bundle_dir=source,
             manifest_path=str(directory / MANIFEST_FILENAME),
             decision="quarantined",
-            reason=reason,
+            reason=manifest.promotion.reason,
             changed=False,
             manifest=manifest,
         )

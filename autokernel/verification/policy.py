@@ -209,6 +209,9 @@ class ParityPolicy:
             policy=str(getattr(parity, "policy", "byte_equal")),
             atol=getattr(parity, "atol", None),
             rtol=getattr(parity, "rtol", None),
+            allow_approximate_math=getattr(
+                parity, "allow_approximate_math", None
+            ),
         )
 
 

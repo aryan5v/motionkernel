@@ -54,6 +54,20 @@ def test_missing_parity_block_defaults_to_the_strictest_policy() -> None:
     assert ParityPolicy.from_workload(_Workload()).exact
 
 
+def test_workload_approximate_math_choice_is_forwarded() -> None:
+    class _Parity:
+        policy = "tolerance"
+        atol = 1e-3
+        rtol = 1e-3
+        allow_approximate_math = False
+
+    class _Workload:
+        parity = _Parity()
+
+    policy = ParityPolicy.from_workload(_Workload())
+    assert not policy.approximate_math_allowed
+
+
 def test_unknown_policy_is_rejected() -> None:
     with pytest.raises(SpecValidationError):
         ParityPolicy(policy="approximately_fine")

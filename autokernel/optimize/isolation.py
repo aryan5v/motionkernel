@@ -30,6 +30,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from autokernel.workload import ParitySpec
 from autokernel.workload.launcher import run_mode
 from autokernel.workload.result import (
     classify_end_to_end,
@@ -358,12 +359,15 @@ def _run_one_trial(
             json.loads(diagnostics_path.read_text(encoding="utf-8")), trial_ids
         )
 
+    frame_atol, frame_rtol = (
+        workload.parity or ParitySpec()
+    ).frame_tolerances()
     parity = compare_frame_outputs(
         native.frames_path,
         candidate.frames_path,
         policy=workload.parity.policy if getattr(workload, "parity", None) else "byte_equal",
-        atol=(workload.parity.atol if getattr(workload, "parity", None) and workload.parity.atol is not None else 0.0),
-        rtol=(workload.parity.rtol if getattr(workload, "parity", None) and workload.parity.rtol is not None else 0.0),
+        atol=frame_atol,
+        rtol=frame_rtol,
     )
     performance = classify_end_to_end(
         native,

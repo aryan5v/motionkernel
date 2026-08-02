@@ -59,6 +59,30 @@ def test_promoted_campaign_writes_receipt_state_report_and_preserves_candidate(
     assert "Isolated operator speedup alone **never** promotes" in report
 
 
+def test_workload_promotion_threshold_cannot_be_weakened_by_campaign_config(
+    tmp_path: Path, repo_root: Path, monkeypatch: pytest.MonkeyPatch
+):
+    _simulate(monkeypatch, "promoted")
+    workload = make_workload(
+        tmp_path / "strict-workload.json",
+        performance={
+            "min_end_to_end_speedup": 1.2,
+            "max_peak_memory_regression": 0.05,
+        },
+    )
+    config = _config(
+        tmp_path,
+        repo_root,
+        workload=workload,
+        min_e2e_speedup=1.01,
+    )
+
+    receipt = run_optimize(config)
+
+    assert receipt["terminal"] == "no_worthwhile_candidate"
+    assert "below threshold" in receipt["message"]
+
+
 def test_no_worthwhile_candidate_stops_after_discovery(
     tmp_path: Path, repo_root: Path, monkeypatch: pytest.MonkeyPatch
 ):

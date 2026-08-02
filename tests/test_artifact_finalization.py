@@ -224,7 +224,7 @@ def test_parity_failure_leaves_the_bundle_quarantined(tmp_path: Path):
 
     assert result.decision == "quarantined"
     assert result.changed is False
-    assert "parity" in result.reason
+    assert result.reason == "packaged before full-generation validation"
     assert (bundle / "artifact.json").read_bytes() == before
     assert verify_bundle(bundle).promotion.decision == "quarantined"
 
@@ -235,7 +235,7 @@ def test_unselected_artifact_leaves_the_bundle_quarantined(tmp_path: Path):
     result = finalize_bundle(bundle, _outcome(artifact_selected=False))
 
     assert result.decision == "quarantined"
-    assert "dispatch did not select" in result.reason
+    assert result.reason == "packaged before full-generation validation"
     assert verify_bundle(bundle).promotion.decision == "quarantined"
 
 
