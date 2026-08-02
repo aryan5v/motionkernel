@@ -129,6 +129,21 @@
     },
     {
       "family": "wan",
+      "workload_id": "wan-t2v-1.3b-720p",
+      "model_id": "Wan-AI/Wan2.1-T2V-1.3B-Diffusers",
+      "cells": {
+        "sm100": {
+          "outcome": "not_attempted",
+          "stale": false
+        },
+        "sm90": {
+          "outcome": "not_attempted",
+          "stale": false
+        }
+      }
+    },
+    {
+      "family": "wan",
       "workload_id": "wan-t2v-14b-480p",
       "model_id": "Wan-AI/Wan2.1-T2V-14B-Diffusers",
       "cells": {

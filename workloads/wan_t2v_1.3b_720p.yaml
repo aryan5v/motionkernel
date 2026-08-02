@@ -1,0 +1,75 @@
+# Wan 2.1 1.3B at 720p / 121 frames: the high-token regime.
+#
+# Exists because attention share scales with sequence length while most other
+# work does not. At 480p/49 frames attention is 27-35% of device time
+# (docs/ATTENTION_CAMPAIGN_RESULTS.md, round 2 step 1), which caps any
+# attention backend at a 1.373x-1.537x Amdahl ceiling and leaves almost no
+# margin over the 1.3x gate. Token count here is roughly 3.4x higher
+# (720x1280x121 vs 480x832x49), so attention should take a materially larger
+# share and the ceiling should rise with it.
+#
+# That is a hypothesis, not a claim: the share must be MEASURED on this
+# workload before any candidate is run here, exactly as it was for 480p.
+schema_version: 1
+workload_id: wan-t2v-1.3b-720p
+description: >
+  Wan 2.1 1.3B T2V at 720p and 121 frames -- the high-token regime where
+  attention share is expected to be large enough for a sparse or quantized
+  backend to clear the 1.3x gate. Used for round-2 attention re-runs and for
+  discovery campaigns that need a long-sequence data point.
+model:
+  model_id: Wan-AI/Wan2.1-T2V-1.3B-Diffusers
+task: t2v
+prompt: >
+  A curious raccoon peers through a vibrant field of yellow sunflowers, soft
+  natural light, steady cinematic camera.
+sampling:
+  height: 720
+  width: 1280
+  num_frames: 121
+  num_inference_steps: 20
+  guidance_scale: 5.0
+  seed: 1024
+  dtype: bfloat16
+runtime:
+  num_gpus: 1
+  use_fsdp_inference: false
+  dit_cpu_offload: false
+  # 720p/121 frames is where VAE decode memory becomes the binding constraint;
+  # offload is enabled here rather than discovering it as an OOM mid-campaign.
+  vae_cpu_offload: true
+  text_encoder_cpu_offload: true
+  pin_cpu_memory: false
+measurement:
+  # 15 timed runs per arm, per the measurement discipline that produced the
+  # 480p results. Generations here are several times longer, so a campaign on
+  # this workload should be budgeted accordingly rather than by run count.
+  warmups: 1
+  runs: 15
+  save_frames: true
+  save_video: false
+parity:
+  policy: byte_equal
+fidelity:
+  # Tier 2, with the same thresholds as the 480p attention workload. They are
+  # declared per workload rather than inherited, and they are provisional: a
+  # perceptual floor at 720p should be re-derived from a native-vs-native
+  # fixed-seed comparison on this resolution before it gates a promotion.
+  tier: perceptual
+  min_ssim: 0.97
+  max_lpips: 0.05
+  frame_set: wan-t2v-1.3b-720p-seed1024
+  seed: 1024
+performance:
+  min_end_to_end_speedup: 1.3
+  max_peak_memory_regression: 0.05
+mode_env:
+  native:
+    FASTVIDEO_ATTENTION_BACKEND: FLASH_ATTN
+  optimized:
+    FASTVIDEO_ATTENTION_BACKEND: FLASH_ATTN
+tags:
+  - wan
+  - t2v
+  - 720p
+  - high-token
