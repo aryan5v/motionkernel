@@ -1,0 +1,201 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{multirow}
+\usepackage{url}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
+% Every number below must match docs/paper/EVIDENCE_MAP.md. Do not edit a
+% number here without updating the map first.
+
+\title{The Promotion Gap: Verified End-to-End Deployment of\\
+Agent-Generated GPU Optimizations for Video Diffusion Inference}
+\author{Aryan \todo{full author list and affiliations}\\
+\todo{acknowledge agent tooling in Acknowledgments, not authorship}}
+\date{August 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Coding agents now routinely produce GPU kernels that pass correctness
+suites and report large isolated speedups. We show that, for production
+video diffusion inference, these two signals are nearly uncorrelated with
+shipped value, and we present a promotion pipeline that measures
+optimizations the way users experience them: full-generation latency and
+output quality on declared workloads, under fail-closed verification. Run
+against FastVideo on NVIDIA GB200, the pipeline surfaced a systematic
+\emph{promotion gap}: three fused Wan~2.1 operators with $8.6$--$10.6\times$
+isolated speedups left 50-step generation latency unchanged; four LTX
+candidates covering $6.2\%$ of end-to-end time could never exceed
+$1.0064\times$; and the delivery mechanism itself charged $3.104$\,ms per
+call to realize a $124$\,\textmu s saving---a $25{:}1$ dispatch tax
+consuming $32.4\%$ of end-to-end time before we eliminated it. Independent
+validation caught agent-generated kernels that were bit-exact yet compiled
+one call's memory layout in as constants, and dispatch code that silently
+bypassed compiler guards to report an unfair $2.557\times$. Extending the
+gates with tiered fidelity contracts (bitwise, numeric, perceptual), we
+evaluate approximate optimizations honestly: two published attention
+methods lose to a tuned FlashAttention baseline in this regime
+($0.80\times$ and $0.52\times$) while structural and perceptual quality
+metrics systematically disagree about them. One transformer artifact was
+promoted end to end ($1.086\times$ median, byte-identical frames, $6{,}143$
+dispatches, zero fallbacks). Every number in this paper traces to a
+committed, machine-generated measurement record. We argue this promotion
+layer---not kernel generation itself---is the missing infrastructure for
+the era of agent-generated performance code.
+\end{abstract}
+
+\section{Introduction}
+\todo{Draft complete; tighten.}
+The cost of producing plausible GPU kernels has collapsed: coding agents
+iterate on Triton and CUDA faster than humans can review the output.
+Evaluation practice has not kept up. The dominant benchmarks score
+generated kernels by isolated correctness and isolated speedup against a
+reference---metrics a kernel can maximize while delivering nothing in a
+real model, or while being wrong in ways isolated tests cannot see.
+
+This paper reports what happens when agent-generated optimizations are
+instead required to survive a production-shaped gauntlet\ldots
+\todo{thesis paragraph; contributions C1--C6 from OUTLINE.md; roadmap.}
+
+\section{Background and Related Work}
+\todo{(a) LLM/agent kernel generation and its isolated-metric evaluation
+practice; (b) video DiT inference cost structure; (c) acceleration
+families: sparse/quantized attention, step caching, compilation and
+megakernels; (d) why existing evaluation does not measure shipped value.}
+
+\section{System: A Fail-Closed Promotion Pipeline}
+\todo{Stage-by-stage description with trust boundaries: declarative
+workloads; metadata-only capture (symbolic FX $\to$ non-strict export
+$\to$ Dynamo fallback; what is never serialized); pure-tensor allowlist
+and fail-closed rejection; measured-impact ranking; graph-derived spec
+generation; sandboxed autonomous search; write-once run contract;
+independent validation; versioned artifact bundles;
+compatibility-checked dispatch; full-generation A/B; finalization.
+Figure~\ref{fig:pipeline}.}
+
+\section{The Promotion Gap}
+\label{sec:gap}
+
+\begin{table}[h]
+\centering
+\caption{Isolated operator speedup versus end-to-end effect (Wan~2.1
+T2V 1.3B, 480p, GB200). Isolated results are weighted across the
+production shape corpus; the 50-step generation A/B was unchanged.}
+\label{tab:wan}
+\begin{tabular}{lrr}
+\toprule
+Fused operator & Isolated speedup & End-to-end effect \\
+\midrule
+Post-attention gated residual + LayerNorm & $8.638\times$ & \multirow{3}{*}{$\sim 1.00\times$} \\
+Modulated pre-attention LayerNorm & $10.449\times$ & \\
+Post-MLP gated residual & $10.628\times$ & \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\centering
+\caption{The arithmetic of sub-percent regions: four validated LTX
+candidates, their measured end-to-end share, and the gain achievable at
+zero overhead and perfect parity. The campaign gate was $1.01\times$.}
+\label{tab:ltx-arith}
+\begin{tabular}{lrrr}
+\toprule
+Artifact & Share of e2e & Isolated speedup & Realized e2e gain \\
+\midrule
+mk-bbfe1518 & 2.334\% & $1.1154\times$ & 0.241\% \\
+mk-a81e140d & 1.863\% & $1.1104\times$ & 0.185\% \\
+mk-baecc382 & 1.081\% & $1.1212\times$ & 0.117\% \\
+mk-b6cb64f9 & 0.922\% & $1.1064\times$ & 0.089\% \\
+\midrule
+\textbf{Total} & \textbf{6.20\%} & & \textbf{0.632\%} ($1.0064\times$) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\todo{Measured- vs.\ estimated-impact ranking: the Amdahl bound overstated
+a $1.115\times$ kernel's return by $>8\times$; per-artifact isolation
+trials as the fix.}
+
+\section{The Dispatch Tax}
+\label{sec:dispatch}
+\todo{Accounting methodology. Eager FX graph replay: $3.104$\,ms overhead
+vs.\ $124$\,\textmu s saving per call; transformer at 384
+calls/generation $\Rightarrow$ 1.192\,s, 32.4\% of e2e; VAE contrast
+(4.7 calls, 0.39\%). The fix: guarded compiled dispatch via registered
+ops; before/after measurement records. Figure: waterfall.}
+
+\section{What Agents Get Wrong}
+\label{sec:taxonomy}
+\todo{The R4 case study as a reproducible taxonomy: (1) bit-exact kernel
+with one call's strides compiled in as \texttt{constexpr}; (2) dispatch
+bypassing Dynamo guards after first call---unfair $2.557\times$, caught
+only by an incidental Inductor stride assertion; (3) metric defects:
+share\_of\_e2e $= 1.0333$, call count $195{,}661$ vs.\ $1{,}151$ real;
+(4) status labels reading as verdicts. Per-gate catch rates table
+[PENDING experiment-store backfill].}
+
+\section{Fidelity Tiers and Approximate Optimizations}
+\label{sec:tiers}
+\todo{Contract design: Tier~0 byte-equal, Tier~1 numeric tolerance,
+Tier~2 perceptual budget declared per workload (fixed-seed reference
+frames, SSIM floor, LPIPS ceiling). Promotion carries the tier and the
+margins.}
+
+\begin{table}[h]
+\centering
+\caption{Attention backend campaign (Wan~2.1 T2V 1.3B, 480p, 49 frames,
+20 steps, GB200/sm100; baseline pinned to FlashAttention; 15 timed runs
+per arm). Gate: $\geq 1.3\times$, SSIM $\geq 0.97$, LPIPS $\leq 0.05$.}
+\label{tab:attention}
+\begin{tabular}{lrrrl}
+\toprule
+Candidate & Median speedup & Worst SSIM & Worst LPIPS & Verdict \\
+\midrule
+SageAttention 1.0.6 & $0.8031\times$ & 0.9353 & 0.0378 & rejected \\
+Video Sparse Attention (zero-shot) & $0.5169\times$ & 0.9527 & 0.0253 & rejected \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\todo{Metric-divergence analysis: LPIPS admits both, SSIM rejects both;
+argument for declaring both. Regime analysis: why these candidates lose
+here (v1 quantization overhead on sm100; VSA tile selection cost at 81k
+tokens; VSA's reported gains require VSA-finetuned checkpoints).
+[PENDING: attention round 2 -- SageAttention2/2++, VSA on FastWan,
+720p/121f. PENDING: caching campaign -- first Tier-2 promotion.]}
+
+\section{End-to-End Results}
+\label{sec:results}
+\todo{LTX2 promoted artifact: $3.3646 \to 3.0991$\,s median
+($1.0857\times$), 15-run A/B; independent replication $1.2514\times$
+[link raw record]; $6{,}143$ dispatches, zero fallbacks, byte-identical
+frames. Support matrix snapshot (model $\times$ workload $\times$ arch)
+[PENDING sm90]. Variance methodology: native-arm CoV ceiling, locked
+clocks, exclusive nodes; before/after spread.}
+
+\section{Limitations and Discussion}
+\todo{Single-framework integration depth (FastVideo) vs.\ what
+generalizes; regimes not covered (multi-GPU, training); what ``verified''
+does and does not claim; cost of the pipeline itself.}
+
+\section{Conclusion}
+\todo{}
+
+\section*{Acknowledgments}
+\todo{Agent tooling disclosure; GPU resources.}
+
+\section*{Reproducibility}
+Every quantitative claim traces to a committed, machine-generated
+measurement record (SLURM job IDs, environment identity, schema-versioned
+JSON) in the public repository. \todo{repo tag + evidence index link.}
+
+\bibliographystyle{plain}
+\bibliography{refs}
+
+\end{document}
