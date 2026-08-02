@@ -1,0 +1,1041 @@
+{
+  "boundary_refs": [
+    "p81",
+    "n392",
+    "n382",
+    "n383",
+    "n384",
+    "n385",
+    "n318",
+    "n363",
+    "n329",
+    "n364",
+    "p54",
+    "p55",
+    "p56",
+    "p57",
+    "p58",
+    "p59"
+  ],
+  "dtypes": [
+    "bfloat16"
+  ],
+  "executable_ir": {
+    "inputs": [
+      {
+        "id": "boundary_0",
+        "kind": "runtime",
+        "meta": {
+          "device_type": "cuda",
+          "dtype": "bfloat16",
+          "requires_grad": false,
+          "shape": [
+            1,
+            4680,
+            4096
+          ],
+          "stride": [
+            19169280,
+            4096,
+            1
+          ]
+        },
+        "name": "input_0"
+      },
+      {
+        "id": "boundary_1",
+        "kind": "runtime",
+        "meta": {
+          "device_type": "cuda",
+          "dtype": "bfloat16",
+          "requires_grad": false,
+          "shape": [
+            1,
+            1,
+            1,
+            4096
+          ],
+          "stride": [
+            4096,
+            4096,
+            4096,
+            1
+          ]
+        },
+        "name": "input_1"
+      },
+      {
+        "id": "boundary_2",
+        "kind": "runtime",
+        "meta": {
+          "device_type": "cuda",
+          "dtype": "bfloat16",
+          "requires_grad": false,
+          "shape": [
+            1,
+            4680,
+            4096
+          ],
+          "stride": [
+            76677120,
+            16384,
+            1
+          ]
+        },
+        "name": "input_2"
+      },
+      {
+        "id": "boundary_3",
+        "kind": "runtime",
+        "meta": {
+          "device_type": "cuda",
+          "dtype": "bfloat16",
+          "requires_grad": false,
+          "shape": [
+            1,
+            4680,
+            4096
+          ],
+          "stride": [
+            76677120,
+            16384,
+            1
+          ]
+        },
+        "name": "input_3"
+      },
+      {
+        "id": "boundary_4",
+        "kind": "runtime",
+        "meta": {
+          "device_type": "cuda",
+          "dtype": "bfloat16",
+          "requires_grad": false,
+          "shape": [
+            1,
+            4680,
+            4096
+          ],
+          "stride": [
+            76677120,
+            16384,
+            1
+          ]
+        },
+        "name": "input_4"
+      },
+      {
+        "id": "boundary_5",
+        "kind": "runtime",
+        "meta": {
+          "device_type": "cuda",
+          "dtype": "bfloat16",
+          "requires_grad": false,
+          "shape": [
+            1,
+            4680,
+            4096
+          ],
+          "stride": [
+            76677120,
+            16384,
+            1
+          ]
+        },
+        "name": "input_5"
+      },
+      {
+        "id": "boundary_6",
+        "kind": "runtime",
+        "meta": {
+          "device_type": "cuda",
+          "dtype": "bfloat16",
+          "requires_grad": false,
+          "shape": [
+            1,
+            4680,
+            4096
+          ],
+          "stride": [
+            19169280,
+            4096,
+            1
+          ]
+        },
+        "name": "input_6"
+      },
+      {
+        "id": "boundary_7",
+        "kind": "runtime",
+        "meta": {
+          "device_type": "cuda",
+          "dtype": "bfloat16",
+          "requires_grad": false,
+          "shape": [
+            1,
+            101,
+            2048
+          ],
+          "stride": [
+            827392,
+            8192,
+            1
+          ]
+        },
+        "name": "input_7"
+      },
+      {
+        "id": "boundary_8",
+        "kind": "runtime",
+        "meta": {
+          "device_type": "cuda",
+          "dtype": "bfloat16",
+          "requires_grad": false,
+          "shape": [
+            1,
+            101,
+            2048
+          ],
+          "stride": [
+            206848,
+            2048,
+            1
+          ]
+        },
+        "name": "input_8"
+      },
+      {
+        "id": "boundary_9",
+        "kind": "runtime",
+        "meta": {
+          "device_type": "cuda",
+          "dtype": "bfloat16",
+          "requires_grad": false,
+          "shape": [
+            1,
+            101,
+            2048
+          ],
+          "stride": [
+            827392,
+            8192,
+            1
+          ]
+        },
+        "name": "input_9"
+      },
+      {
+        "id": "boundary_10",
+        "kind": "runtime",
+        "meta": {
+          "device_type": "cuda",
+          "dtype": "bfloat16",
+          "requires_grad": false,
+          "shape": [
+            2048,
+            4096
+          ],
+          "stride": [
+            4096,
+            1
+          ]
+        },
+        "name": "input_10"
+      },
+      {
+        "id": "boundary_11",
+        "kind": "runtime",
+        "meta": {
+          "device_type": "cuda",
+          "dtype": "bfloat16",
+          "requires_grad": false,
+          "shape": [
+            2048
+          ],
+          "stride": [
+            1
+          ]
+        },
+        "name": "input_11"
+      },
+      {
+        "id": "boundary_12",
+        "kind": "runtime",
+        "meta": {
+          "device_type": "cuda",
+          "dtype": "bfloat16",
+          "requires_grad": false,
+          "shape": [
+            2048,
+            2048
+          ],
+          "stride": [
+            2048,
+            1
+          ]
+        },
+        "name": "input_12"
+      },
+      {
+        "id": "boundary_13",
+        "kind": "runtime",
+        "meta": {
+          "device_type": "cuda",
+          "dtype": "bfloat16",
+          "requires_grad": false,
+          "shape": [
+            2048
+          ],
+          "stride": [
+            1
+          ]
+        },
+        "name": "input_13"
+      },
+      {
+        "id": "boundary_14",
+        "kind": "runtime",
+        "meta": {
+          "device_type": "cuda",
+          "dtype": "bfloat16",
+          "requires_grad": false,
+          "shape": [
+            2048,
+            2048
+          ],
+          "stride": [
+            2048,
+            1
+          ]
+        },
+        "name": "input_14"
+      },
+      {
+        "id": "boundary_15",
+        "kind": "runtime",
+        "meta": {
+          "device_type": "cuda",
+          "dtype": "bfloat16",
+          "requires_grad": false,
+          "shape": [
+            2048
+          ],
+          "stride": [
+            1
+          ]
+        },
+        "name": "input_15"
+      }
+    ],
+    "nodes": [
+      {
+        "args": [
+          {
+            "ref": "boundary_0"
+          },
+          {
+            "list": [
+              {
+                "const": 1
+              },
+              {
+                "const": 4680
+              },
+              {
+                "const": 1
+              },
+              {
+                "const": -1
+              }
+            ]
+          }
+        ],
+        "id": "n393",
+        "kwargs": {},
+        "meta": {
+          "device_type": "cuda",
+          "dtype": "bfloat16",
+          "requires_grad": false,
+          "shape": [
+            1,
+            4680,
+            1,
+            4096
+          ],
+          "stride": [
+            19169280,
+            4096,
+            4096,
+            1
+          ]
+        },
+        "target": "aten.reshape.default"
+      },
+      {
+        "args": [
+          {
+            "ref": "n393"
+          }
+        ],
+        "id": "n394",
+        "kwargs": {},
+        "meta": {
+          "device_type": "cuda",
+          "dtype": "bfloat16",
+          "requires_grad": false,
+          "shape": [
+            1,
+            4680,
+            1,
+            4096
+          ],
+          "stride": [
+            19169280,
+            4096,
+            4096,
+            1
+          ]
+        },
+        "target": "aten.slice.Tensor"
+      },
+      {
+        "args": [
+          {
+            "ref": "n394"
+          },
+          {
+            "const": 1
+          }
+        ],
+        "id": "n395",
+        "kwargs": {},
+        "meta": {
+          "device_type": "cuda",
+          "dtype": "bfloat16",
+          "requires_grad": false,
+          "shape": [
+            1,
+            4680,
+            1,
+            4096
+          ],
+          "stride": [
+            19169280,
+            4096,
+            4096,
+            1
+          ]
+        },
+        "target": "aten.slice.Tensor"
+      },
+      {
+        "args": [
+          {
+            "ref": "n395"
+          },
+          {
+            "const": 2
+          }
+        ],
+        "id": "n396",
+        "kwargs": {},
+        "meta": {
+          "device_type": "cuda",
+          "dtype": "bfloat16",
+          "requires_grad": false,
+          "shape": [
+            1,
+            4680,
+            1,
+            4096
+          ],
+          "stride": [
+            19169280,
+            4096,
+            4096,
+            1
+          ]
+        },
+        "target": "aten.slice.Tensor"
+      },
+      {
+        "args": [
+          {
+            "ref": "n396"
+          },
+          {
+            "const": 3
+          }
+        ],
+        "id": "n397",
+        "kwargs": {},
+        "meta": {
+          "device_type": "cuda",
+          "dtype": "bfloat16",
+          "requires_grad": false,
+          "shape": [
+            1,
+            4680,
+            1,
+            4096
+          ],
+          "stride": [
+            19169280,
+            4096,
+            4096,
+            1
+          ]
+        },
+        "target": "aten.slice.Tensor"
+      },
+      {
+        "args": [
+          {
+            "ref": "boundary_1"
+          },
+          {
+            "ref": "n397"
+          }
+        ],
+        "id": "n398",
+        "kwargs": {},
+        "meta": {
+          "device_type": "cuda",
+          "dtype": "bfloat16",
+          "requires_grad": false,
+          "shape": [
+            1,
+            4680,
+            1,
+            4096
+          ],
+          "stride": [
+            19169280,
+            4096,
+            4096,
+            1
+          ]
+        },
+        "target": "aten.add.Tensor"
+      },
+      {
+        "args": [
+          {
+            "ref": "n398"
+          },
+          {
+            "const": 2
+          }
+        ],
+        "id": "n399",
+        "kwargs": {},
+        "target": "aten.unbind.int"
+      },
+      {
+        "args": [
+          {
+            "ref": "n399"
+          },
+          {
+            "const": 0
+          }
+        ],
+        "id": "n400",
+        "kwargs": {},
+        "meta": {
+          "device_type": "cuda",
+          "dtype": "bfloat16",
+          "requires_grad": false,
+          "shape": [
+            1,
+            4680,
+            4096
+          ],
+          "stride": [
+            19169280,
+            4096,
+            1
+          ]
+        },
+        "target": "operator.getitem"
+      },
+      {
+        "args": [
+          {
+            "ref": "boundary_2"
+          },
+          {
+            "const": 2
+          }
+        ],
+        "id": "n401",
+        "kwargs": {},
+        "meta": {
+          "device_type": "cuda",
+          "dtype": "bfloat16",
+          "requires_grad": false,
+          "shape": [
+            1,
+            4680,
+            4096
+          ],
+          "stride": [
+            76677120,
+            16384,
+            1
+          ]
+        },
+        "target": "aten.squeeze.dim"
+      },
+      {
+        "args": [
+          {
+            "ref": "boundary_3"
+          },
+          {
+            "const": 2
+          }
+        ],
+        "id": "n402",
+        "kwargs": {},
+        "meta": {
+          "device_type": "cuda",
+          "dtype": "bfloat16",
+          "requires_grad": false,
+          "shape": [
+            1,
+            4680,
+            4096
+          ],
+          "stride": [
+            76677120,
+            16384,
+            1
+          ]
+        },
+        "target": "aten.squeeze.dim"
+      },
+      {
+        "args": [
+          {
+            "ref": "boundary_4"
+          },
+          {
+            "const": 2
+          }
+        ],
+        "id": "n403",
+        "kwargs": {},
+        "meta": {
+          "device_type": "cuda",
+          "dtype": "bfloat16",
+          "requires_grad": false,
+          "shape": [
+            1,
+            4680,
+            4096
+          ],
+          "stride": [
+            76677120,
+            16384,
+            1
+          ]
+        },
+        "target": "aten.squeeze.dim"
+      },
+      {
+        "args": [
+          {
+            "ref": "boundary_5"
+          },
+          {
+            "const": 2
+          }
+        ],
+        "id": "n404",
+        "kwargs": {},
+        "meta": {
+          "device_type": "cuda",
+          "dtype": "bfloat16",
+          "requires_grad": false,
+          "shape": [
+            1,
+            4680,
+            4096
+          ],
+          "stride": [
+            76677120,
+            16384,
+            1
+          ]
+        },
+        "target": "aten.squeeze.dim"
+      },
+      {
+        "args": [
+          {
+            "ref": "n400"
+          },
+          {
+            "const": 2
+          }
+        ],
+        "id": "n405",
+        "kwargs": {},
+        "meta": {
+          "device_type": "cuda",
+          "dtype": "bfloat16",
+          "requires_grad": false,
+          "shape": [
+            1,
+            4680,
+            4096
+          ],
+          "stride": [
+            19169280,
+            4096,
+            1
+          ]
+        },
+        "target": "aten.squeeze.dim"
+      },
+      {
+        "args": [
+          {
+            "ref": "n401"
+          },
+          {
+            "const": 1
+          }
+        ],
+        "id": "n406",
+        "kwargs": {},
+        "meta": {
+          "device_type": "cuda",
+          "dtype": "bfloat16",
+          "requires_grad": false,
+          "shape": [
+            1,
+            4680,
+            4096
+          ],
+          "stride": [
+            19169280,
+            4096,
+            1
+          ]
+        },
+        "target": "aten.add.Tensor"
+      },
+      {
+        "args": [
+          {
+            "ref": "boundary_6"
+          },
+          {
+            "ref": "n406"
+          }
+        ],
+        "id": "n407",
+        "kwargs": {},
+        "meta": {
+          "device_type": "cuda",
+          "dtype": "bfloat16",
+          "requires_grad": false,
+          "shape": [
+            1,
+            4680,
+            4096
+          ],
+          "stride": [
+            19169280,
+            4096,
+            1
+          ]
+        },
+        "target": "aten.mul.Tensor"
+      },
+      {
+        "args": [
+          {
+            "ref": "n407"
+          },
+          {
+            "ref": "n402"
+          }
+        ],
+        "id": "n408",
+        "kwargs": {},
+        "meta": {
+          "device_type": "cuda",
+          "dtype": "bfloat16",
+          "requires_grad": false,
+          "shape": [
+            1,
+            4680,
+            4096
+          ],
+          "stride": [
+            19169280,
+            4096,
+            1
+          ]
+        },
+        "target": "aten.add.Tensor"
+      },
+      {
+        "args": [
+          {
+            "ref": "boundary_7"
+          },
+          {
+            "const": 1
+          }
+        ],
+        "id": "n409",
+        "kwargs": {},
+        "meta": {
+          "device_type": "cuda",
+          "dtype": "bfloat16",
+          "requires_grad": false,
+          "shape": [
+            1,
+            101,
+            2048
+          ],
+          "stride": [
+            206848,
+            2048,
+            1
+          ]
+        },
+        "target": "aten.add.Tensor"
+      },
+      {
+        "args": [
+          {
+            "ref": "boundary_8"
+          },
+          {
+            "ref": "n409"
+          }
+        ],
+        "id": "n410",
+        "kwargs": {},
+        "meta": {
+          "device_type": "cuda",
+          "dtype": "bfloat16",
+          "requires_grad": false,
+          "shape": [
+            1,
+            101,
+            2048
+          ],
+          "stride": [
+            206848,
+            2048,
+            1
+          ]
+        },
+        "target": "aten.mul.Tensor"
+      },
+      {
+        "args": [
+          {
+            "ref": "n410"
+          },
+          {
+            "ref": "boundary_9"
+          }
+        ],
+        "id": "n411",
+        "kwargs": {},
+        "meta": {
+          "device_type": "cuda",
+          "dtype": "bfloat16",
+          "requires_grad": false,
+          "shape": [
+            1,
+            101,
+            2048
+          ],
+          "stride": [
+            206848,
+            2048,
+            1
+          ]
+        },
+        "target": "aten.add.Tensor"
+      },
+      {
+        "args": [
+          {
+            "ref": "n408"
+          },
+          {
+            "ref": "boundary_10"
+          },
+          {
+            "ref": "boundary_11"
+          }
+        ],
+        "id": "n412",
+        "kwargs": {},
+        "meta": {
+          "device_type": "cuda",
+          "dtype": "bfloat16",
+          "requires_grad": false,
+          "shape": [
+            1,
+            4680,
+            2048
+          ],
+          "stride": [
+            9584640,
+            2048,
+            1
+          ]
+        },
+        "target": "aten.linear.default"
+      },
+      {
+        "args": [
+          {
+            "ref": "n411"
+          },
+          {
+            "ref": "boundary_12"
+          },
+          {
+            "ref": "boundary_13"
+          }
+        ],
+        "id": "n413",
+        "kwargs": {},
+        "meta": {
+          "device_type": "cuda",
+          "dtype": "bfloat16",
+          "requires_grad": false,
+          "shape": [
+            1,
+            101,
+            2048
+          ],
+          "stride": [
+            206848,
+            2048,
+            1
+          ]
+        },
+        "target": "aten.linear.default"
+      },
+      {
+        "args": [
+          {
+            "ref": "n411"
+          },
+          {
+            "ref": "boundary_14"
+          },
+          {
+            "ref": "boundary_15"
+          }
+        ],
+        "id": "n414",
+        "kwargs": {},
+        "meta": {
+          "device_type": "cuda",
+          "dtype": "bfloat16",
+          "requires_grad": false,
+          "shape": [
+            1,
+            101,
+            2048
+          ],
+          "stride": [
+            206848,
+            2048,
+            1
+          ]
+        },
+        "target": "aten.linear.default"
+      }
+    ],
+    "outputs": [
+      {
+        "ref": "n412"
+      },
+      {
+        "ref": "n413"
+      },
+      {
+        "ref": "n414"
+      },
+      {
+        "ref": "n405"
+      },
+      {
+        "ref": "n403"
+      },
+      {
+        "ref": "n404"
+      }
+    ],
+    "schema_version": 1
+  },
+  "name": "generated_transformer_model_transformer_blocks_09d92c42",
+  "output_node_ids": [
+    "n412",
+    "n413",
+    "n414",
+    "n405",
+    "n403",
+    "n404"
+  ],
+  "parent": {
+    "calls": 195661,
+    "capture_mode": "export",
+    "cuda_time_us": 4270738.777000174,
+    "fingerprint": "2c92e356aa34bc0d3c49522bd1365c1b",
+    "module": "transformer.model.transformer_blocks",
+    "name": "transformer.model.transformer_blocks.09d92c42",
+    "self_cuda_time_us": 2864051.9510001247,
+    "timing_scope": "parent_region_not_selected_subregion"
+  },
+  "schema_version": 1,
+  "selected_node_ids": [
+    "n393",
+    "n394",
+    "n395",
+    "n396",
+    "n397",
+    "n398",
+    "n399",
+    "n400",
+    "n401",
+    "n402",
+    "n403",
+    "n404",
+    "n405",
+    "n406",
+    "n407",
+    "n408",
+    "n409",
+    "n410",
+    "n411",
+    "n412",
+    "n413",
+    "n414"
+  ],
+  "sizes": {
+    "large": {
+      "case": 1
+    },
+    "medium": {
+      "case": 1
+    },
+    "small": {
+      "case": 1
+    }
+  }
+}

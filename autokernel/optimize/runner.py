@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from autokernel.workload import load_workload
 
@@ -90,6 +90,23 @@ def _finite_metric(value: Any) -> float | None:
     return number if math.isfinite(number) else None
 
 
+
+def _variance_blocked(metrics: Mapping[str, Any]) -> str | None:
+    """Promotion-blocking reason when the e2e measurement is variance-invalid.
+
+    Only an explicit ``variance_valid: False`` blocks: legacy campaigns
+    without a measured CV are untouched, while any campaign whose native arm
+    exceeds the declared ceiling is recorded but unusable as promotion
+    evidence.
+    """
+    if metrics.get("variance_valid") is False:
+        return str(
+            metrics.get("variance_reason")
+            or "native-arm variance exceeds the declared ceiling"
+        )
+    return None
+
+
 def _decide_terminal(
     state: dict[str, Any],
     stage_results: dict[str, dict[str, Any]],
@@ -133,6 +150,12 @@ def _decide_terminal(
                         "no_worthwhile_candidate",
                         f"promotion blocked: e2e classification={classification!r}",
                     )
+                variance_reason = _variance_blocked(metrics)
+                if variance_reason is not None:
+                    return (
+                        "no_worthwhile_candidate",
+                        f"promotion blocked: {variance_reason}",
+                    )
                 return (
                     "promoted",
                     f"promoted with end-to-end speedup={speedup}",
@@ -162,6 +185,12 @@ def _decide_terminal(
         and speedup >= min_e2e_speedup
         and classification == "improved"
     ):
+        variance_reason = _variance_blocked(metrics)
+        if variance_reason is not None:
+            return (
+                "no_worthwhile_candidate",
+                f"promotion blocked: {variance_reason}",
+            )
         return ("promoted", f"promoted with end-to-end speedup={speedup}")
     if classification in {"neutral", "regressed"} or (
         speedup is not None and speedup < min_e2e_speedup
