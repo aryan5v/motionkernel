@@ -247,11 +247,20 @@ def _run_arm(workload, mode, backend, runs, warmups, output):
 
 
 def _save_frames(result, path: Path):
-    """Persist one generation's frames for the perceptual comparison."""
+    """Persist one generation's frames as a numeric (N, H, W, C) array.
+
+    ``generate_video`` returns PIL images, so a bare ``np.asarray`` produces an
+    object array that will not reload without ``allow_pickle`` and cannot be
+    scored. Normalize to a real numeric array here, where the frames are still
+    in hand, rather than leaving a 300MB file that has to be re-derived.
+    """
     import numpy as np
 
-    array = np.asarray(result[0] if isinstance(result, (list, tuple)) else result)
-    np.save(path, array)
+    frames = result[0] if isinstance(result, (list, tuple)) else result
+    stacked = np.stack([np.asarray(frame) for frame in frames])
+    if stacked.dtype == object:
+        raise TypeError(f"frames did not normalize to a numeric array: {stacked.dtype}")
+    np.save(path, stacked)
     return path
 
 
