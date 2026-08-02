@@ -66,6 +66,24 @@ Status: ✅ committed on main · 🔀 on an unmerged branch · ⏳ pending campa
 | Tier-2 promoted artifact (caching) | target ≥1.3x + quality evidence | Track C campaign | ⏳ Agent 1 phase 2 |
 | Attention round 2 (SageAttention2/2++, VSA-on-FastWan, 720p) | — | Track A phase 3 | ⏳ Agent 1 |
 
+## §6 additions — self-corrections and audit-caught defects
+
+| claim | value | record | status |
+|---|---|---|---|
+| Attention share estimate corrected (inclusive column, chain counted 4x) | 45.94% → 27–35% (wan-480p) | PR #23 / attention-share records | 🔀 verify after merge |
+| LTX attention share → excluded on ceiling | 15.13% → 1.178x ceiling | same | 🔀 |
+| Author-published VSA numbers corrected via store ingest | job-log vs ingested record | experiment-store PR | 🔀 |
+| Amdahl ceiling for wan-480p attention | 1.373–1.537x | same records | 🔀 |
+
+## §8 additions — measurement validity
+
+| claim | value | record | status |
+|---|---|---|---|
+| Exclusive nodes do not collapse spread | 5.57% vs 4.74%/7.37% CV | variance before/after records (SLURM 1055) | ✅ (merged via #21/#22 follow-ups) |
+| Clock locking unavailable; idle 285 MHz vs 2062 MHz max | environment records | same | ✅ |
+| Run 1055 marked invalid for gating; three previously reported numbers retracted | 1.0274x, 1.2459x, 1.1155x | same | ✅ |
+| Native-arm CV in attention campaign (valid runs) | 0.04% / 0.46% | attention campaign records | ✅ |
+
 ## Open evidence gaps (blockers for submission)
 
 1. **Tier-2 promotion** — the paper's frontier claim needs at least one
@@ -77,3 +95,10 @@ Status: ✅ committed on main · 🔀 on an unmerged branch · ⏳ pending campa
    the raw measurement and link it here or drop the claim.
 5. **Wan e2e-neutral re-run under variance controls** — current record
    predates clock locking; cheap to redo, strengthens T1.
+6. **720p attention share** — unmeasured; decides whether attention
+   round 2 is worth its budget and appears in §7's regime analysis.
+7. **V1 LTX headline re-validation** — the 1.0857x median and 1.2514x
+   replication were measured under the sequential protocol now proven
+   ungateable on this cluster (see §8 additions). They must be re-measured
+   under the paired/interleaved protocol before the paper leads with
+   them. Until then the prose must not present them as gated results.

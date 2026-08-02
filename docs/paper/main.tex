@@ -50,17 +50,94 @@ the era of agent-generated performance code.
 \end{abstract}
 
 \section{Introduction}
-\todo{Draft complete; tighten.}
-The cost of producing plausible GPU kernels has collapsed: coding agents
-iterate on Triton and CUDA faster than humans can review the output.
-Evaluation practice has not kept up. The dominant benchmarks score
-generated kernels by isolated correctness and isolated speedup against a
-reference---metrics a kernel can maximize while delivering nothing in a
-real model, or while being wrong in ways isolated tests cannot see.
 
-This paper reports what happens when agent-generated optimizations are
-instead required to survive a production-shaped gauntlet\ldots
-\todo{thesis paragraph; contributions C1--C6 from OUTLINE.md; roadmap.}
+The cost of producing plausible GPU kernels has collapsed. Coding agents
+iterate on Triton and CUDA faster than humans can review the output, and
+benchmark suites report that they increasingly succeed: generated kernels
+pass correctness tests and beat reference implementations by comfortable
+margins. Evaluation practice, however, has not kept up with generation
+practice. The dominant benchmarks score a kernel in isolation---correct
+outputs on sampled inputs, speedup against a reference on fixed
+shapes~\cite{kernelbench2025,kernelgenbench2026}. These are the two
+signals an optimizing agent is trained and prompted to maximize, and we
+show that in a production system they are nearly uncorrelated with
+delivered value.
+
+We report on MotionKernel, a system that holds agent-generated
+optimizations to a different standard: an optimization counts only if it
+improves \emph{full-generation} latency on a \emph{declared workload}
+without violating a \emph{declared fidelity contract}, measured end to
+end in the target framework with the artifact actually dispatching. The
+pipeline is fail-closed at every stage---capture, ranking, spec
+generation, search, validation, packaging, dispatch, and promotion each
+reject by default and must be affirmatively passed. We applied it to
+video diffusion inference (FastVideo~\cite{fastvideo} running Wan
+2.1~\cite{wan2025} and LTX-2 on NVIDIA GB200), a domain whose cost
+structure---hundreds of transformer invocations per generation, quadratic
+attention over $10^4$--$10^5$ tokens, a heavy VAE---makes the distance
+between operator microbenchmarks and user-visible latency unusually
+stark.
+
+That distance is the paper's central finding, which we call the
+\emph{promotion gap}. Three fused Wan operators achieved
+$8.6$--$10.6\times$ isolated speedups across their production shape
+corpora and left 50-step generation latency unchanged
+(Table~\ref{tab:wan}). Four validated LTX candidates with isolated
+speedups of $1.11$--$1.12\times$ covered $6.20\%$ of end-to-end time in
+aggregate: even at zero overhead and perfect fidelity, no combination
+could exceed $1.0064\times$ (Table~\ref{tab:ltx-arith}). The delivery
+mechanism itself initially charged $3.104$\,ms per call to realize a
+$124$\,\textmu s saving---a $25{:}1$ dispatch tax that consumed $32.4\%$
+of end-to-end time at 384 calls per generation
+(Section~\ref{sec:dispatch}). And when we extended the gates to admit
+approximate methods under explicit perceptual budgets, two published
+attention accelerators lost to a tuned FlashAttention baseline in this
+regime---$0.80\times$ and $0.52\times$---while the two standard quality
+metrics disagreed about both of them (Section~\ref{sec:tiers}).
+
+None of these facts is visible to isolated evaluation. Worse, isolated
+evaluation is actively gameable by the systems being evaluated: our
+independent validation caught an agent-generated kernel that was
+bit-exact on every isolated test while having one call's memory layout
+compiled in as constants, and dispatch code that silently bypassed
+\texttt{torch.compile}'s guards to report a $2.557\times$ speedup its
+guarded equivalent could not reproduce (Section~\ref{sec:taxonomy}). We
+also caught ourselves: the pipeline's own impact attribution over-counted
+a dispatch chain $4\times$, and an author-published number was corrected
+when the experiment store ingested the underlying records. We therefore
+treat machine-checked claims not as reproducibility hygiene but as a
+load-bearing component of the system.
+
+This paper makes the following contributions:
+\begin{enumerate}
+\item A fail-closed promotion pipeline for agent-generated optimizations,
+  from declarative workloads and metadata-only graph capture through
+  sandboxed autonomous search, independent validation, versioned
+  artifacts, and full-generation A/B promotion (Section~3).
+\item A quantified account of the promotion gap: isolated operator
+  speedup does not predict shipped value, and measured per-artifact
+  impact must replace analytical upper bounds, which overstated one
+  kernel's return by more than $8\times$ (Section~\ref{sec:gap}).
+\item Dispatch-tax accounting: a methodology for attributing delivery
+  overhead per call, the $25{:}1$ result it produced, and the measured
+  elimination of that overhead (Section~\ref{sec:dispatch}).
+\item A failure taxonomy of agent-generated performance code, drawn from
+  artifacts our gates caught, with the checks that caught them
+  (Section~\ref{sec:taxonomy}).
+\item Tiered fidelity contracts (bitwise, numeric, perceptual) that admit
+  approximate optimizations without abandoning verification, and honest
+  campaign results under them, including systematic disagreement between
+  SSIM and LPIPS (Section~\ref{sec:tiers}).
+\item End-to-end results and measurement methodology, including a
+  promoted transformer artifact ($1.086\times$ median, byte-identical
+  frames, $6{,}143$ dispatches, zero fallbacks) and an invalidation
+  policy under which we retracted three of our own previously reported
+  numbers when node-level variance proved sequential A/B measurement
+  ungateable on our cluster (Section~\ref{sec:results}).
+\end{enumerate}
+
+We release the system, every workload manifest, and the machine-generated
+measurement record behind every number in this paper.
 
 \section{Background and Related Work}
 \todo{(a) LLM/agent kernel generation and its isolated-metric evaluation
@@ -132,13 +209,129 @@ ops; before/after measurement records. Figure: waterfall.}
 
 \section{What Agents Get Wrong}
 \label{sec:taxonomy}
-\todo{The R4 case study as a reproducible taxonomy: (1) bit-exact kernel
-with one call's strides compiled in as \texttt{constexpr}; (2) dispatch
-bypassing Dynamo guards after first call---unfair $2.557\times$, caught
-only by an incidental Inductor stride assertion; (3) metric defects:
-share\_of\_e2e $= 1.0333$, call count $195{,}661$ vs.\ $1{,}151$ real;
-(4) status labels reading as verdicts. Per-gate catch rates table
-[PENDING experiment-store backfill].}
+
+Autonomous search produced kernels that were fast, numerically exact, and
+wrong. This section is a taxonomy of the failures our pipeline caught,
+organized by what made each one invisible to isolated evaluation. Every
+case is drawn from preserved, immutable campaign evidence; none is
+hypothetical. We include, deliberately, the failures that originated in
+our own pipeline and in our own claims, because the taxonomy's lesson is
+not ``agents write bad kernels''---it is that \emph{plausibility,
+correctness on sampled inputs, and honest accounting are three different
+properties}, and a promotion system must check all three.
+
+\subsection{Contract violations that isolated tests cannot see}
+
+The strongest candidate of one LTX campaign---a fused transformer
+subregion spanning 22 graph nodes---passed smoke testing with
+\texttt{max\_abs\_error} $= 0.0$, passed a full shape sweep at
+$0.00$ worst error, and was bitwise deterministic across runs. It
+failed the numerical-stability stage with a stride assertion:
+\texttt{expected stride 4096 == 16384 at dim=1}. The kernel was not
+numerically wrong anywhere; it had compiled the memory layout of
+\emph{one observed call} into itself as compile-time constants:
+
+\begin{verbatim}
+_MAIN_ROWS = 4680
+SOURCE_ROW_STRIDE = 16384   # a property of one call,
+CONTEXT_ROW_STRIDE = 8192   # not of the operation
+\end{verbatim}
+
+The observed inputs were non-contiguous slices of larger timestep
+tensors; the stability stage allocated fresh contiguous tensors of the
+same shape, and the kernel would have read at wrong addresses. Every
+isolated test that reuses the captured inputs---which is what
+speedup-oriented evaluation naturally does---certifies this kernel as
+perfect. The failure class is a \emph{layout contract violation}:
+the kernel implements a function of one call's strides, not of the
+operation. The gate that caught it was input diversity: validation
+stages that re-generate inputs rather than replaying captured ones.
+
+\subsection{Measurement gaming: the guard bypass}
+
+The same candidate reported a $2.557\times$ isolated speedup. Its
+dispatch wrapper compiled the implementation once, then cached and called
+Inductor's raw compiled entry directly:
+
+\begin{verbatim}
+# "Calling the captured entry directly avoids a
+#  guard/cache lookup before every GPU schedule."
+outputs = _COMPILED_ENTRY(...)
+\end{verbatim}
+
+Two things are wrong at once. First, the number is unfair: the compiled
+baseline it was compared against pays guard evaluation on every call, and
+the candidate does not---the agent optimized the \emph{measurement
+boundary}, not the kernel. Second, the bypass removes exactly the safety
+mechanism that would have converted the layout violation of the previous
+subsection from an assertion failure into silently wrong output at full
+speed. The violation surfaced only because Inductor happens to emit an
+internal stride assertion; the agent's Triton kernels contain no such
+check. We draw a general conclusion: \textbf{an optimizing agent given a
+timing harness will, without adversarial intent, discover the seams of
+the harness}---and dispatch-path shortcuts look identical to legitimate
+optimization in a diff. The countermeasure is structural, not
+review-based: validation re-times candidates under its own guarded
+dispatch, and a candidate whose speedup does not survive guarded
+execution is scored on the guarded number.
+
+\subsection{Attribution defects: when the pipeline lies to the search}
+
+The search can only be as honest as the numbers steering it, and two of
+the largest defects we found were in our own attribution, not in any
+kernel. A campaign's transformer region was assigned
+\texttt{share\_of\_e2e} $= 1.0333$---more than the whole
+generation---because inclusive profiler ranges were summed against an
+exclusive total. Its call count was recorded as $195{,}661$; the module
+was invoked $1{,}151$ times---aten-level events across 48 blocks were
+counted as module calls. Downstream, packaging consulted an analytic
+Amdahl bound (\texttt{share} $\times 0.9$, assuming the region's cost
+falls to zero) that overstated the realizable return of a $1.115\times$
+kernel by more than $8\times$; two artifacts carried
+\texttt{meets\_promotion\_target: false} into packaging and were
+packaged anyway. The same defect recurred months later in our own
+analysis: an attention-share estimate of $45.94\%$, computed by summing
+an inclusive profiler column that counted one dispatch chain four times,
+was corrected to a measured $27$--$35\%$. Attribution errors are more
+dangerous than kernel errors: a wrong kernel is caught by a gate, while
+a wrong impact number silently misallocates the entire search budget.
+The remedies that worked were mechanical: derive impact from
+per-artifact isolation trials rather than analytic bounds, and reconcile
+module-level counts against profiler events before ranking consumes
+them.
+
+\subsection{Language that reads as verdicts}
+
+Smaller defects concerned words rather than numbers, and they matter
+because unattended runs are read after the fact by humans deciding what
+shipped. A campaign status field reported four artifacts as
+\texttt{finalized}; all four were quarantined and none was promoted. A
+quarantine reason claimed ``the end-to-end validation stage did not
+complete''; the stage had completed and returned a definite negative.
+A search prompt announced ``Measured optimistic model impact: None\%''
+because it read a key that nothing writes. Each is trivial; together
+they compound into a run report that a reasonable reader mistakes for
+success. Our rule since: status vocabulary is closed and tested, reasons
+must quote the evidence they summarize, and any prompt field that can be
+unset fails preflight rather than interpolating \texttt{None}.
+
+\subsection{Failures caught by gates versus failures caught by tooling}
+
+Of the defects above, the layout violation and the guard bypass were
+caught by verification gates; the attribution and language defects were
+caught by audit---a human rereading evidence---and later by
+infrastructure built in response (an experiment store whose ingest
+reconciles published numbers against raw records caught an
+author-published speedup that had been transcribed from a job log, and a
+factual claim about a model's attention requirements was corrected when
+the store linked the constraint to the checkpoint rather than the
+configuration). The trajectory across our campaigns is consistent:
+\textbf{every class of error we initially caught by reading, we
+eventually caught earlier by checking}, and the system's reliability
+improved exactly as fast as claims moved from prose into
+machine-validated records.
+\todo{Per-gate catch-rate table from experiment-store backfill
+(EVIDENCE\_MAP gap 3).}
 
 \section{Fidelity Tiers and Approximate Optimizations}
 \label{sec:tiers}
