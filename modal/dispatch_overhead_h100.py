@@ -73,6 +73,7 @@ ltx_image = (
         "pillow>=10.3.0",
         "protobuf>=5.28.3",
         "pyyaml>=6.0.1",
+        "remote-pdb",
         "safetensors>=0.5.0",
         "scipy>=1.14.1",
         "sentencepiece>=0.2.0",
@@ -331,6 +332,18 @@ def measure_sm90() -> str:
 
     snapshot_download(MODEL_ID, local_files_only=True)
 
+    # One H100 (79 GiB) cannot hold the checkpoint plus 48 graph pools in the
+    # sm100 configuration (OOM during generation). Offload the VAE only: it
+    # runs after denoising, so the dispatched transformer path being measured
+    # is untouched. Recorded in the measurement README as a regime difference.
+    import yaml
+
+    workload_src = Path("/opt/motionkernel/workloads/ltx_480p.yaml")
+    workload_sm90 = RUN_ROOT / "ltx_480p_sm90.yaml"
+    manifest = yaml.safe_load(workload_src.read_text(encoding="utf-8"))
+    manifest["runtime"]["vae_cpu_offload"] = True
+    workload_sm90.write_text(yaml.safe_dump(manifest, sort_keys=False), encoding="utf-8")
+
     artifact_root = RUN_ROOT / "artifacts-sm90"
     bundles = [path for path in artifact_root.iterdir() if path.is_dir()]
     if len(bundles) != 1:
@@ -354,7 +367,7 @@ def measure_sm90() -> str:
             "--fastvideo-checkout",
             "/opt/FastVideo",
             "--workload",
-            "/opt/motionkernel/workloads/ltx_480p.yaml",
+            str(workload_sm90),
             "--artifact-root",
             str(artifact_root),
             "--output",
