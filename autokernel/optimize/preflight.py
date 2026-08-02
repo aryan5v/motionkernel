@@ -582,6 +582,19 @@ def _check_search_agent(
         )
         return record
 
+    # A campaign that stops before the search stage never invokes the agent,
+    # so requiring it would block discovery-only nightlies on a dependency
+    # they do not have. The skip is recorded, not hidden.
+    stop = config.stop_after_stage
+    if (
+        stop is not None
+        and stop in PIPELINE_STAGES
+        and PIPELINE_STAGES.index(stop) < PIPELINE_STAGES.index("search")
+    ):
+        record["checked"] = False
+        record["skipped_reason"] = f"campaign stops after {stop}; search never runs"
+        return record
+
     if config.search_agent_command is not None:
         parts = [str(part) for part in config.search_agent_command]
         if not parts or any(not part for part in parts):
