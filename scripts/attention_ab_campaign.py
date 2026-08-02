@@ -176,6 +176,11 @@ def main() -> int:
         evidence = compare_frame_sets(
             FrameSet(budget.frame_set, budget.seed or 0, reference),
             FrameSet(budget.frame_set, budget.seed or 0, candidate_frames),
+            # Ask for LPIPS when the budget gates on it. If no backend is
+            # installed the metric stays absent and the gate holds -- which is
+            # correct, but it holds on "not measured" rather than telling us
+            # anything about the candidate, so it is worth requesting.
+            want_lpips=budget.max_lpips is not None,
         )
         verdict = evaluate_fidelity(budget, evidence, parity_passed=False)
         fidelity_block = {
@@ -246,6 +251,31 @@ def _run_arm(workload, mode, backend, runs, warmups, output):
     return timings, frames
 
 
+def _extract_frames(result):
+    """Pull the decoded frames out of a generate_video result.
+
+    The result is a dict carrying ``samples`` (a torch tensor, NCTHW) and
+    ``frames`` (a list of HWC uint8 arrays), plus latency and memory fields.
+    ``frames`` is the decoded output and the thing a perceptual comparison is
+    about, so it is preferred; ``samples`` is the fallback and is transposed to
+    frame order.
+    """
+    if isinstance(result, dict):
+        if result.get("frames") is not None:
+            return result["frames"]
+        samples = result.get("samples")
+        if samples is not None:
+            import numpy as np
+
+            array = samples.detach().cpu().numpy() if hasattr(samples, "detach") else np.asarray(samples)
+            # NCTHW -> THWC
+            return list(np.transpose(array[0], (1, 2, 3, 0)))
+        raise KeyError(f"no frames in result; keys were {sorted(result)}")
+    if isinstance(result, (list, tuple)):
+        return _extract_frames(result[0]) if isinstance(result[0], dict) else result
+    return result
+
+
 def _save_frames(result, path: Path):
     """Persist one generation's frames as a numeric (N, H, W, C) array.
 
@@ -256,7 +286,7 @@ def _save_frames(result, path: Path):
     """
     import numpy as np
 
-    frames = result[0] if isinstance(result, (list, tuple)) else result
+    frames = _extract_frames(result)
     stacked = np.stack([np.asarray(frame) for frame in frames])
     if stacked.dtype == object:
         raise TypeError(f"frames did not normalize to a numeric array: {stacked.dtype}")
