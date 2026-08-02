@@ -222,3 +222,124 @@ def test_the_always_available_backends_are_exact_and_not_optional() -> None:
 def test_every_known_backend_declares_a_class_path() -> None:
     for name, identity in KNOWN_BACKENDS.items():
         assert identity.class_path.startswith("fastvideo.attention.backends."), name
+
+
+# -- the promotion gate -------------------------------------------------
+
+
+def _outcome(**overrides):
+    """A GenerationOutcome that would otherwise promote."""
+    from autokernel.artifact import GenerationOutcome
+
+    values = {
+        "workload_id": "wan-t2v-1.3b",
+        "steps": 8,
+        "parity_passed": False,  # an attention backend is never bit-exact
+        "artifact_selected": True,
+        "classification": "improved",
+        "min_speedup": 1.01,
+        "speedup": 1.42,
+    }
+    values.update(overrides)
+    return GenerationOutcome(**values)
+
+
+def _tier2():
+    from autokernel.verification.fidelity import FidelityBudget
+
+    return FidelityBudget(
+        tier="perceptual",
+        min_ssim=0.98,
+        max_lpips=0.02,
+        frame_set="wan-fixed-seed-8",
+        seed=1234,
+    )
+
+
+def _evidence(**overrides):
+    from autokernel.verification.fidelity import PerceptualEvidence
+
+    values = {
+        "frame_set": "wan-fixed-seed-8",
+        "seed": 1234,
+        "frames_compared": 8,
+        "ssim": 0.9903,
+        "lpips": 0.0089,
+    }
+    values.update(overrides)
+    return PerceptualEvidence(**values)
+
+
+def test_a_silent_fallback_quarantines_an_otherwise_promotable_run() -> None:
+    """Everything else says promote: 1.42x, selected, improved, tier-2 clean.
+
+    Only the backend check stands between a FlashAttention run and a
+    SageAttention promotion.
+    """
+    decision, reason = _outcome(
+        fidelity=_tier2(),
+        perceptual=_evidence(),
+        attention_declared="SAGE_ATTN",
+        attention_effective=FALLBACK_BACKEND,
+    ).decide()
+    assert decision == "quarantined"
+    assert "SAGE_ATTN" in reason and FALLBACK_BACKEND in reason
+
+
+def test_an_unreported_backend_quarantines() -> None:
+    decision, reason = _outcome(
+        fidelity=_tier2(),
+        perceptual=_evidence(),
+        attention_declared="SAGE_ATTN",
+        attention_effective=None,
+    ).decide()
+    assert decision == "quarantined"
+    assert "no effective backend" in reason
+
+
+def test_an_inexact_backend_cannot_be_promoted_at_tier_1() -> None:
+    """Declaring tier 1 for a quantizing backend is a contract error.
+
+    Without this the run would quarantine anyway on parity, but with a reason
+    that blames the numerics rather than the mis-declared budget.
+    """
+    decision, reason = _outcome(
+        attention_declared="SAGE_ATTN",
+        attention_effective="SAGE_ATTN",
+    ).decide()
+    assert decision == "quarantined"
+    assert "tier 1" in reason
+    assert "tier 2" in reason  # tells the operator what to do instead
+
+
+def test_the_declared_backend_running_at_tier_2_promotes() -> None:
+    decision, reason = _outcome(
+        fidelity=_tier2(),
+        perceptual=_evidence(),
+        attention_declared="SAGE_ATTN",
+        attention_effective="SAGE_ATTN",
+    ).decide()
+    assert decision == "promoted"
+    assert "tier 2 (perceptual)" in reason
+
+
+def test_non_attention_artifacts_are_unaffected() -> None:
+    from autokernel.artifact import GenerationOutcome
+
+    decision, _ = GenerationOutcome(
+        workload_id="w",
+        steps=4,
+        parity_passed=True,
+        artifact_selected=True,
+        classification="improved",
+        min_speedup=1.01,
+        speedup=1.2,
+    ).decide()
+    assert decision == "promoted"
+
+
+def test_an_unknown_declared_backend_is_rejected_at_construction() -> None:
+    from autokernel.artifact import ArtifactError
+
+    with pytest.raises(ArtifactError, match="unknown attention backend"):
+        _outcome(attention_declared="MADE_UP", attention_effective="MADE_UP")
