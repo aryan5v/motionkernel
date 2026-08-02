@@ -95,3 +95,75 @@ Baseline reproducibility across independent jobs, hours apart:
   attention takes a larger share and sequences are longer. These results do not
   generalize beyond the row they were measured on -- which is the argument for
   the support matrix in Track E.
+
+---
+
+# Round 2
+
+## Step 1 — attention's share of end-to-end, measured before spending budget
+
+The >=1.3x gate is an Amdahl bound. If attention is a share S of device time,
+then even *infinitely fast* attention caps end-to-end speedup at `1/(1-S)`.
+Below S ~= 0.23 the ceiling is under 1.3x and no backend can pass, however good
+its kernels are. Measuring S first is the difference between a campaign and a
+way of spending GPU hours to rediscover arithmetic.
+
+Measured from our own profiler exports (`universal-profiler-wan-worker`,
+`universal-profiler-ltx-worker`) with `scripts/attention_share.py`.
+
+| workload | attention share | Amdahl ceiling | >=1.3x reachable? |
+|---|---|---|---|
+| `wan-t2v-1.3b-480p` | 27.17% - 34.95% | 1.3730x - 1.5372x | **yes**, with little margin |
+| `ltx-480p` | 15.13% | 1.1783x | **no** |
+
+**LTX is excluded from round 2 attention work.** At a 1.178x ceiling the 1.3x
+gate cannot be met by any attention backend, including a hypothetical one that
+takes zero time. Running candidates there would produce guaranteed rejections
+at full GPU cost. This is a property of the workload, not of any candidate.
+
+**Wan remains a valid target, but the margin is thin.** A ceiling of
+1.373x-1.537x means a candidate must remove 70-85% of attention time just to
+reach the gate. That is a demanding bar, and it should temper expectations for
+step 2 rather than be discovered afterwards.
+
+### How the share was attributed, and why it is a range
+
+This is the part that is easy to get wrong, and this project has gotten it
+wrong before. Profiler rows carry both `cuda_time_us` (inclusive of children)
+and `self_cuda_time_us` (exclusive), and a single attention call appears in up
+to four rows of one dispatch chain -- outer custom op, autograd Function, inner
+op, and the CUDA kernel -- several sharing the same time.
+
+Summing the inclusive column inflated the Wan share to 45.94% on the first
+attempt. That is the identical defect recorded in `LTX_V1_R4_ROOT_CAUSE.md`
+section 5: *"attributed 2864051.95us of a 2771790.13us total; inclusive ranges
+summed against an exclusive total"*.
+
+Self time alone is still not enough, because framework-operator rows and
+device-kernel rows are two views of the same GPU work: for Wan,
+`flash_attn::_flash_attn_forward` and `void flash::flash_fwd_kernel<...>` both
+report 1.3673 s, and the two view totals sum exactly to the profiler's reported
+total. So the share is computed independently in each population:
+
+| workload | view | total | attention | share |
+|---|---|---|---|---|
+| wan | operators | 5.061 s | 1.375 s | 27.17% |
+| wan | device kernels | 3.934 s | 1.375 s | 34.95% |
+| ltx | operators | 2.771 s | 0.419 s | 15.13% |
+| ltx | device kernels | (no kernel rows in this export) | | |
+
+Both Wan views agree on the attention *time* (1.375 s); they differ only in
+what they divide it by. The range is reported rather than a point estimate,
+because picking whichever end supported the decision we wanted would be exactly
+the failure this section exists to avoid.
+
+LTX's export contains no device-kernel rows, so only the operator view is
+available there. Its verdict does not depend on the choice: 15.13% is below the
+threshold under any attribution.
+
+### Provenance
+
+Profiler exports predate the round-1 campaign and were produced by earlier
+discovery runs, so the step counts may differ from the campaign workloads.
+Attention share is a function of architecture and sequence length rather than
+step count, so the ratio carries; the absolute seconds do not.
