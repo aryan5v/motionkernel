@@ -65,12 +65,13 @@ It remains for internal reasons (139 import sites, and resumable run
 directories) that are documented, along with what a rename would really cost,
 in [docs/NAMESPACE_MIGRATION.md](docs/NAMESPACE_MIGRATION.md).
 
-A `motionkernel` import namespace also works at runtime and aliases the same
-modules (`motionkernel.specs is autokernel.specs`, with shared class identity).
-It is not yet the recommended namespace: because it resolves through a runtime
-finder rather than real files, type checkers cannot see it. See
-[docs/NAMESPACE_MIGRATION.md](docs/NAMESPACE_MIGRATION.md) for the measured
-limitations and the four-phase plan that removes them.
+A `motionkernel` import namespace is also available and re-exports the same
+objects, so `motionkernel.specs.KernelSpec is autokernel.specs.KernelSpec` and
+`isinstance` works across both. It is plain modules rather than an import hook,
+so type checkers resolve it. Deep module paths such as
+`motionkernel.verification.policy` are not exposed; each subpackage's public
+API is re-exported flat. See
+[docs/NAMESPACE_MIGRATION.md](docs/NAMESPACE_MIGRATION.md).
 
 ## How It Works
 

@@ -58,7 +58,24 @@ no "we will fix it in a patch" row.
       `SECURITY.md` reviewed for stale product language.
 - [ ] `docs/SUPPORT_STATUS.md` levels match reality.
 
-## 7. Tag and publish
+## 7. Repository settings (verify, do not assume)
+
+- [ ] Private vulnerability reporting is enabled, so the link in
+      [SECURITY.md](../SECURITY.md) resolves for a reporter.
+      *Settings → Security → Private vulnerability reporting.*
+      **Verified disabled** at the time of writing — this is a launch blocker.
+- [ ] Issues are enabled, or SECURITY.md names a channel that exists.
+      **Verified disabled** at the time of writing.
+- [ ] Repository topics are set (currently empty), so the project is
+      discoverable as more than a fork.
+- [ ] Dependabot security updates enabled (currently disabled). Secret
+      scanning and push protection are already on.
+- [ ] Repository description and topics match the product, not the fork name.
+- [ ] Default branch is `main`.
+- [ ] The fork relationship is left intact for this release — detaching is
+      irreversible and loses issues, PRs, stars and the public audit trail.
+
+## 8. Tag and publish
 
 - [ ] Tag `v<version>`, annotated, on a commit that passed the above.
 - [ ] Release notes summarise the CHANGELOG section and link the evidence for

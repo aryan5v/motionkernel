@@ -81,42 +81,40 @@ What phase 1 deliberately does **not** do:
 - it does not deprecate `autokernel` or emit any warning;
 - it does not change any on-disk artifact format or hash.
 
-Implementation: `motionkernel/__init__.py` installs a `MetaPathFinder` that
-resolves `motionkernel.<x>` to the already-imported `autokernel.<x>`. It
-declines cleanly for names it does not own, so unrelated imports are unaffected.
+Implementation: `motionkernel/` contains one ordinary module per public
+subpackage, each re-exporting `autokernel.<x>`. No import hook, no
+`sys.meta_path` mutation, no import-time side effects beyond importing the
+package it re-exports.
 
-### Known limitations of the alias
+### Why not an import hook
 
-These are measured, not theoretical, and they are why `autokernel` remains the
-namespace this project points production users at for now.
+An earlier revision resolved `motionkernel.<x>` through a `sys.meta_path`
+finder. It worked at run time and preserved module identity, but a runtime
+finder is invisible to static analysis by construction — so the namespace this
+project was recommending was the one that lost type checking and IDE
+completion. Measured against a clean install of the wheel:
 
-**Static analysis cannot see it.** Type checkers resolve modules from the
-filesystem; a runtime `MetaPathFinder` is invisible to them. Against a clean
-install of the wheel:
-
-| import | mypy result | `reveal_type` |
+| import | with the finder | with plain modules |
 |---|---|---|
-| `from autokernel.specs import Tolerance` | resolves | `autokernel.specs.types.Tolerance` |
-| `from motionkernel.specs import Tolerance` | `Cannot find implementation or library stub` | `Any` |
+| `from autokernel.specs import Tolerance` | resolves | resolves |
+| `from motionkernel.specs import Tolerance` | `Cannot find implementation or library stub`, type `Any` | resolves, `autokernel.specs.types.Tolerance` |
 
-Both packages ship `py.typed`, which is what makes the first row work. The
-second row cannot be fixed without real files on disk. Anyone who type-checks
-their code, or relies on IDE completion, is better served by `autokernel` until
-phase 2.
+The finder also mutated `sys.meta_path` on import, reported `__name__` as
+`autokernel.specs`, and returned nothing from `pkgutil.iter_modules`.
 
-**Submodule discovery returns nothing.** `pkgutil.iter_modules` over
-`motionkernel.__path__` lists no submodules, because the real ones live under
-`autokernel/`. Documentation generators and plugin scanners that enumerate a
-package will find an empty one.
+### What the re-export gives up
 
-**`__name__` reports the compatibility name.** `motionkernel.specs.__name__` is
-`"autokernel.specs"`, and classes defined there have
-`__module__ == "autokernel.specs.types"`. This is deliberate — it keeps
-pickles stable across both import paths — but it surprises anyone reading a
-traceback or a `repr`.
+**Module identity.** `motionkernel.specs is autokernel.specs` is now `False`.
+Nothing depends on that. What callers depend on is *class* identity —
+`motionkernel.specs.KernelSpec is autokernel.specs.KernelSpec` — which holds,
+because these modules re-export the same objects rather than redefining them.
+`isinstance` works across both namespaces, and a test enforces it.
 
-None of these affect runtime behaviour: imports, class identity, `isinstance`,
-and pickling all work correctly through either name.
+**Deep module paths.** `motionkernel.verification.policy` is not importable;
+`motionkernel.verification` is a module, not a package. Each subpackage's
+public API is re-exported flat, so `from motionkernel.verification import
+ParityPolicy` works. Deep paths remain available under `autokernel`, which is
+fully supported.
 
 ## Later phases
 

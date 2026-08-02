@@ -6,6 +6,12 @@ Report suspected vulnerabilities privately through
 [GitHub Security Advisories](https://github.com/aryan5v/motionkernel/security/advisories/new).
 Please do not open a public issue for a security report.
 
+> **Before the first public release**, private vulnerability reporting must be
+> enabled on the repository (*Settings → Security → Private vulnerability
+> reporting*). It is currently disabled, and Issues are disabled too, so a
+> reporter following this page has no working channel. Verified against the
+> repository API; see `docs/RELEASE_CHECKLIST.md` §7.
+
 Include the affected version or commit, what an attacker can achieve, and the
 smallest reproduction you have. If a report involves an artifact bundle, attach
 its `artifact.json` rather than the payload.

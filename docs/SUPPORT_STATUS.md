@@ -11,6 +11,7 @@ evidence that is linked from this page.
 | **Proven** | An artifact passed strict independent correctness, was packaged and hash-verified, was dispatched by the runtime, preserved the workload's declared output parity, met the campaign's end-to-end speedup gate, and was promoted. Evidence is linked. |
 | **Validated (isolated)** | Kernels pass correctness and performance gates against a production shape corpus, on named hardware, with a linked result. No end-to-end model claim. |
 | **In progress** | Active work. No correctness or performance claim of any kind. |
+| **Candidate** | Integration work exists and may run, but no authoritative end-to-end evidence has been published. Not a support claim. |
 | **Target** | On the roadmap. Nothing has been run. |
 
 A target being *listed* is not a support claim. Nothing is described as
@@ -22,7 +23,7 @@ A target being *listed* is not a support claim. Nothing is described as
 |---|---|---|---|
 | LTX2 (`FastVideo/LTX2-Distilled-Diffusers`) | FastVideo | **Proven** | [V1 evidence report](LTX_V1_R4_ROOT_CAUSE.md) |
 | Wan | FastVideo | **Validated (isolated)** | [Wan kernel results](WAN_KERNEL_RESULTS.md) |
-| Cosmos | FastVideo | **In progress** | — |
+| Cosmos | FastVideo | **Candidate** | — (no authoritative evidence yet) |
 | Kandinsky | FastVideo | **Target** | — |
 | Diffusers video pipelines | Diffusers | **Target** | — |
 
@@ -52,6 +53,20 @@ near 1.015x. The larger measured figure comes from the runtime additionally
 replaying the whole block from a CUDA graph, which removes host-side dispatch
 cost. That acceleration exists only on the artifact path, so the A/B is sound,
 but more of the gain comes from the framework than from the kernel.
+
+### Cosmos — why it is a candidate, not supported
+
+Cosmos integration work is in flight and a proof run may be under way, but no
+end-to-end evidence has been published against this repository. Until an
+artifact has cleared the same six gates LTX2 did -- strict independent
+correctness, hash-verified packaging, dispatch with `candidate_calls > 0`, the
+workload's declared output parity, the campaign speedup gate, and a promoted
+decision -- Cosmos stays at **candidate**.
+
+Specifically not claimed: that Cosmos generates correct output under artifact
+dispatch, that any Cosmos artifact is faster, or that Cosmos works on any
+particular GPU architecture. A run in progress is not evidence; a published
+result is.
 
 ### Wan — scope of the validation
 

@@ -18,12 +18,12 @@ The upstream MIT license and copyright (`Copyright (c) 2026 RightNow AI`) are pr
 
 | Category | Files | Python lines | Share of Python |
 |---|---:|---:|---:|
-| Unchanged from upstream | 45 | 9580 | 21.5% |
+| Unchanged from upstream | 45 | 9580 | 21.4% |
 | Modified descendants | 9 | 3615 | 8.1% |
-| MotionKernel-original | 140 | 31321 | 70.4% |
-| **Total** | **194** | **44516** | |
+| MotionKernel-original | 152 | 31525 | 70.5% |
+| **Total** | **206** | **44720** | |
 
-Inherited Python footprint (unchanged plus modified): **29.6%**. The remaining 70.4% -- the artifact format, graph discovery, spec generation, the workload system, the optimizer control plane, validation and promotion, the CLI, and the FastVideo bridge -- is MotionKernel work.
+Inherited Python footprint (unchanged plus modified): **29.5%**. The remaining 70.5% -- the artifact format, graph discovery, spec generation, the workload system, the optimizer control plane, validation and promotion, the CLI, and the FastVideo bridge -- is MotionKernel work.
 
 The largest remaining visible dependency is the `autokernel` import namespace, which is a compatibility namespace rather than the product name. See [docs/NAMESPACE_MIGRATION.md](docs/NAMESPACE_MIGRATION.md).
 
@@ -93,7 +93,7 @@ Present upstream, modified here. Derivative works.
 
 ## MotionKernel-original
 
-Added by this project (140 files). Listed by top-level location; every file under these paths is original unless named above.
+Added by this project (152 files). Listed by top-level location; every file under these paths is original unless named above.
 
 - `.github` (1 file)
 - `CONTRIBUTING.md` (1 file)
@@ -105,13 +105,13 @@ Added by this project (140 files). Listed by top-level location; every file unde
 - `campaign.py` (1 file)
 - `conftest.py` (1 file)
 - `discovery.py` (1 file)
-- `docs` (12 files)
+- `docs` (15 files)
 - `examples` (5 files)
 - `kernels` (3 files)
 - `models` (6 files)
-- `motionkernel` (2 files)
+- `motionkernel` (10 files)
 - `optimize.py` (1 file)
-- `scripts` (1 file)
+- `scripts` (2 files)
 - `tests` (34 files)
 - `workload.py` (1 file)
 - `workloads` (2 files)

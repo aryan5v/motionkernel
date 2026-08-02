@@ -208,38 +208,6 @@ def test_compatibility_namespace_still_imports() -> None:
         sys.path.pop(0)
 
 
-def test_canonical_namespace_aliases_rather_than_duplicates() -> None:
-    """Two copies would mean two registries and two sets of class objects, so
-    isinstance across the namespaces would fail."""
-    sys.path.insert(0, str(REPO_ROOT))
-    try:
-        import motionkernel.specs
-        import motionkernel.verification
-
-        import autokernel.specs
-        import autokernel.verification
-        import motionkernel
-
-        assert motionkernel.specs is autokernel.specs
-        assert motionkernel.verification is autokernel.verification
-        assert motionkernel.specs.KernelSpec is autokernel.specs.KernelSpec
-        assert motionkernel.__version__ == autokernel.__version__
-    finally:
-        sys.path.pop(0)
-
-
-def test_canonical_namespace_declines_names_it_does_not_own() -> None:
-    """The alias finder must not claim unrelated imports."""
-    sys.path.insert(0, str(REPO_ROOT))
-    try:
-        import motionkernel
-
-        with pytest.raises(ImportError):
-            __import__("motionkernel.definitely_not_a_module")
-        with pytest.raises(AttributeError):
-            motionkernel.definitely_not_an_attribute
-    finally:
-        sys.path.pop(0)
 
 
 def test_generated_specs_still_import_a_shipped_namespace() -> None:
@@ -266,10 +234,19 @@ def test_support_status_page_exists_and_defines_its_levels() -> None:
 
 
 def test_cosmos_is_not_claimed_as_supported() -> None:
-    """Cosmos has no published evidence; it must read as in progress."""
+    """Cosmos has no published end-to-end evidence, so it must not read as
+    proven or validated. A run being under way is not evidence."""
     text = (REPO_ROOT / "docs" / "SUPPORT_STATUS.md").read_text(encoding="utf-8")
     row = next(line for line in text.splitlines() if line.startswith("| Cosmos"))
-    assert "In progress" in row, f"Cosmos row claims more than the evidence supports: {row}"
+    assert any(level in row for level in ("Candidate", "In progress", "Target")), (
+        f"Cosmos row claims more than the evidence supports: {row}"
+    )
+    assert "Proven" not in row and "Validated" not in row
+
+
+def test_support_levels_include_candidate() -> None:
+    text = (REPO_ROOT / "docs" / "SUPPORT_STATUS.md").read_text(encoding="utf-8")
+    assert "**Candidate**" in text
 
 
 def test_proven_rows_carry_evidence_links() -> None:
@@ -291,80 +268,73 @@ def test_proven_rows_carry_evidence_links() -> None:
     assert checked, "no Proven support rows found; update this guard"
 
 
-# -- alias namespace behaviour ------------------------------------------
+# -- canonical namespace ------------------------------------------------
 #
-# The alias resolves through a runtime MetaPathFinder. That buys shared module
-# and class identity, and costs static-analysis visibility. These lock the
-# behaviour that is relied on and the failure modes that were found by probing
-# it, so a future change to the mechanism has to confront them deliberately.
+# The canonical namespace is plain re-export modules, not an import hook. An
+# earlier revision used a sys.meta_path finder; it preserved module identity
+# but was invisible to type checkers, which is the one property the namespace
+# being recommended most needs.
 
 
-def test_alias_reports_the_real_import_error_not_a_missing_attribute(tmp_path) -> None:
-    """A submodule that exists but fails to import must surface its own error.
-
-    Reporting a missing optional dependency as "module 'motionkernel' has no
-    attribute 'workload'" hides the cause during exactly the debugging session
-    where it matters.
-    """
+def test_canonical_namespace_shares_class_identity() -> None:
+    """Module identity is not shared and does not need to be; class identity
+    is what makes isinstance work across the two namespaces."""
     sys.path.insert(0, str(REPO_ROOT))
-    # A public name: attributes starting with "_" are refused outright, so the
-    # forwarder is never reached for private or dunder introspection.
-    probe = REPO_ROOT / COMPATIBILITY_NAMESPACE / "probeimportfailure.py"
-    probe.write_text('raise ImportError("underlying cause")\n', encoding="utf-8")
     try:
+        import autokernel.specs
+        import autokernel.verification
         import motionkernel
+        import motionkernel.specs
+        import motionkernel.verification
 
-        with pytest.raises(ImportError, match="underlying cause"):
-            motionkernel.probeimportfailure  # noqa: B018
+        assert motionkernel.specs.KernelSpec is autokernel.specs.KernelSpec
+        assert motionkernel.specs.Tolerance is autokernel.specs.Tolerance
+        assert (
+            motionkernel.verification.ParityPolicy
+            is autokernel.verification.ParityPolicy
+        )
+        assert motionkernel.__version__ == autokernel.__version__
     finally:
-        probe.unlink(missing_ok=True)
-        sys.modules.pop(f"{COMPATIBILITY_NAMESPACE}.probeimportfailure", None)
         sys.path.pop(0)
 
 
-def test_a_genuinely_absent_name_is_still_an_attribute_error() -> None:
+def test_isinstance_holds_across_namespaces() -> None:
     sys.path.insert(0, str(REPO_ROOT))
     try:
-        import motionkernel
+        from autokernel.specs import Tolerance as A
+        from motionkernel.specs import Tolerance as M
 
-        with pytest.raises(AttributeError, match="has no attribute"):
-            motionkernel.genuinely_absent_name  # noqa: B018
+        assert isinstance(A(atol=1e-3, rtol=1e-3), M)
+        assert isinstance(M(atol=1e-3, rtol=1e-3), A)
     finally:
         sys.path.pop(0)
 
 
-def test_reloading_the_alias_package_does_not_leak_finders() -> None:
-    """isinstance cannot be used for the idempotency check: reload rebinds the
-    finder class, so the old instance stops matching and duplicates pile up."""
-    import importlib
-
-    sys.path.insert(0, str(REPO_ROOT))
-    try:
-        import motionkernel
-
-        for _ in range(3):
-            importlib.reload(motionkernel)
-        installed = [
-            entry
-            for entry in sys.meta_path
-            if getattr(entry, "_motionkernel_alias_finder", False)
-        ]
-        assert len(installed) == 1, f"{len(installed)} alias finders installed"
-    finally:
-        sys.path.pop(0)
+def test_canonical_namespace_uses_no_import_hook() -> None:
+    """No sys.meta_path mutation, so importing it cannot affect unrelated
+    imports elsewhere in the process."""
+    source = (REPO_ROOT / "motionkernel" / "__init__.py").read_text(encoding="utf-8")
+    # The prose explains why there is no hook, so match the call, not the word.
+    assert "sys.meta_path" not in source.replace("``sys.meta_path``", "")
+    assert "meta_path.append" not in source
+    assert "class _AliasFinder" not in source
 
 
-def test_alias_finder_declines_unrelated_module_names() -> None:
-    sys.path.insert(0, str(REPO_ROOT))
-    try:
-        from motionkernel import resolve_compatibility_name
-
-        assert resolve_compatibility_name("motionkernel.specs") == "autokernel.specs"
-        assert resolve_compatibility_name("motionkernel") is None
-        assert resolve_compatibility_name("motionkernelish.specs") is None
-        assert resolve_compatibility_name("numpy") is None
-    finally:
-        sys.path.pop(0)
+def test_every_public_subpackage_is_re_exported() -> None:
+    """A subpackage present under autokernel but missing here is a silent gap
+    in the canonical namespace."""
+    expected = {
+        path.name
+        for path in (REPO_ROOT / COMPATIBILITY_NAMESPACE).iterdir()
+        if path.is_dir() and (path / "__init__.py").is_file() and not path.name.startswith("_")
+    }
+    shipped = {
+        path.stem
+        for path in (REPO_ROOT / CANONICAL_NAMESPACE).glob("*.py")
+        if path.stem != "__init__"
+    }
+    missing = expected - shipped - {"workloads"}
+    assert not missing, f"canonical namespace is missing: {sorted(missing)}"
 
 
 def test_both_packages_ship_a_py_typed_marker() -> None:
@@ -374,20 +344,15 @@ def test_both_packages_ship_a_py_typed_marker() -> None:
         assert marker.is_file(), f"{namespace} has no py.typed marker"
 
 
+def test_the_namespace_tradeoff_is_documented() -> None:
+    text = (REPO_ROOT / "docs" / "NAMESPACE_MIGRATION.md").read_text(encoding="utf-8")
+    assert "What the re-export gives up" in text
+    assert "Deep module paths" in text
+
+
 def test_docs_do_not_claim_artifacts_pin_the_namespace() -> None:
     """They do not. A packaged bundle is candidate.py, entry.py and
-    manifest.json; none of them import the package. An earlier draft used that
-    false claim as the main argument for keeping the compatibility namespace."""
+    manifest.json; none of them import the package."""
     for name in ("README.md", "DOWNSTREAM.md", "docs/NAMESPACE_MIGRATION.md"):
         text = (REPO_ROOT / name).read_text(encoding="utf-8")
-        assert "invalidate the manifest of every artifact" not in text, (
-            f"{name} repeats a false artifact-pinning claim"
-        )
-
-
-def test_the_alias_limitation_is_documented() -> None:
-    """The canonical namespace is invisible to type checkers. Shipping that
-    without saying so would mislead anyone who follows the naming advice."""
-    text = (REPO_ROOT / "docs" / "NAMESPACE_MIGRATION.md").read_text(encoding="utf-8")
-    assert "Known limitations of the alias" in text
-    assert "Cannot find implementation or library stub" in text
+        assert "invalidate the manifest of every artifact" not in text

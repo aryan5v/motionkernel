@@ -72,10 +72,10 @@ would invalidate nothing. It remains for internal reasons -- 139 import sites
 and resumable run directories -- set out with their real cost in
 [docs/NAMESPACE_MIGRATION.md](docs/NAMESPACE_MIGRATION.md).
 
-`autokernel` is the namespace to use today: it is fully supported, resolvable
-by type checkers, and not deprecated. `motionkernel` works at runtime but is
-invisible to static analysis until phase 2 replaces the runtime alias with real
-modules. See
+Both namespaces are supported and both resolve for type checkers.
+`autokernel` is what generated specs and schema-1 artifact bundles import and
+is not deprecated; `motionkernel` re-exports the same objects under the
+canonical name. See
 [docs/NAMESPACE_MIGRATION.md](docs/NAMESPACE_MIGRATION.md) for the four-phase
 plan and the gate on each phase.
 
