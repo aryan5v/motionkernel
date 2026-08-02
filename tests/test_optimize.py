@@ -296,3 +296,72 @@ def test_stage_result_contract_fails_closed(
     result.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(OptimizeError, match=match):
         _load_stage_result(result, expected_stage="baseline")
+
+
+def test_stop_after_discover_terminates_as_discovery_complete(
+    tmp_path: Path, repo_root: Path, monkeypatch: pytest.MonkeyPatch
+):
+    _simulate(monkeypatch, "promoted")
+    config = _config(tmp_path, repo_root, stop_after_stage="discover")
+
+    receipt = run_optimize(config)
+
+    assert receipt["terminal"] == "discovery_complete"
+    assert receipt["completed_stages"] == ["baseline", "profile", "discover"]
+    # No verdict was reached: candidates keep their discovered status rather
+    # than being rewritten to promoted/not_promoted.
+    assert receipt["candidates"][0]["status"] == "discovered"
+    assert "stopped after discover" in receipt["message"]
+
+
+def test_stop_after_discover_is_idempotent_on_resume(
+    tmp_path: Path, repo_root: Path, monkeypatch: pytest.MonkeyPatch
+):
+    _simulate(monkeypatch, "promoted")
+    config = _config(tmp_path, repo_root, stop_after_stage="discover")
+    first = run_optimize(config)
+    assert first["terminal"] == "discovery_complete"
+
+    second = run_optimize(config)
+
+    assert second["terminal"] == "discovery_complete"
+    assert second["completed_stages"] == ["baseline", "profile", "discover"]
+    # A resume must not drift past the requested stop stage.
+    assert not (config.output / "stages" / "specgen" / "result.json").exists()
+
+
+def test_stop_after_discover_preserves_no_worthwhile_verdict(
+    tmp_path: Path, repo_root: Path, monkeypatch: pytest.MonkeyPatch
+):
+    _simulate(monkeypatch, "no_worthwhile_candidate")
+    config = _config(tmp_path, repo_root, stop_after_stage="discover")
+
+    receipt = run_optimize(config)
+
+    assert receipt["terminal"] == "no_worthwhile_candidate"
+
+
+def test_resume_with_later_stop_stage_continues_campaign(
+    tmp_path: Path, repo_root: Path, monkeypatch: pytest.MonkeyPatch
+):
+    _simulate(monkeypatch, "promoted")
+    discovery_only = _config(tmp_path, repo_root, stop_after_stage="discover")
+    assert run_optimize(discovery_only)["terminal"] == "discovery_complete"
+
+    # stop_after_stage is an operational control, not run identity: resuming
+    # without it continues the same campaign to a verdict.
+    full = _config(tmp_path, repo_root)
+    receipt = run_optimize(full)
+
+    assert receipt["terminal"] == "promoted"
+    assert receipt["completed_stages"] == list(PIPELINE_STAGES)
+
+
+def test_stop_after_stage_rejects_unknown_stage(
+    tmp_path: Path, repo_root: Path, monkeypatch: pytest.MonkeyPatch
+):
+    _simulate(monkeypatch, "promoted")
+    config = _config(tmp_path, repo_root, stop_after_stage="not_a_stage")
+
+    with pytest.raises(OptimizeError, match="stop_after_stage"):
+        run_optimize(config)

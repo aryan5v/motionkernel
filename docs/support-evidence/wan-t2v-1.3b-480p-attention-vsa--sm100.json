@@ -1,0 +1,15 @@
+{
+  "schema": "motionkernel.support-run",
+  "schema_version": 1,
+  "workload_id": "wan-t2v-1.3b-480p-attention-vsa",
+  "model_id": "Wan-AI/Wan2.1-T2V-1.3B-Diffusers",
+  "family": "wan",
+  "arch": "sm100",
+  "outcome": "no_worthwhile_candidate",
+  "recorded_utc": "2026-08-02T19:15:00+00:00",
+  "evidence": "/mnt/nfs/vlm-aryan/vsa-ab-1046",
+  "reason": "VIDEO_SPARSE_ATTN rejected: 0.5169x end-to-end median over 15 timed runs per arm, nearly 2x slower than the FLASH_ATTN baseline, and worst-frame SSIM 0.9527 below the 0.97 tier-2 floor (LPIPS 0.0253 passed). Effective backend verified as VIDEO_SPARSE_ATTN. Native-arm CV 0.46%, inside the 3% ceiling. Run zero-shot on vanilla Wan; FastVideo's VSA numbers come from VSA-finetuned FastWan checkpoints. SLURM 1046 (timing), 1053 (fidelity).",
+  "source": {
+    "receipt_terminal": "no_worthwhile_candidate"
+  }
+}

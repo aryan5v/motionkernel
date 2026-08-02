@@ -38,6 +38,10 @@ TERMINAL_STATUSES: frozenset[str] = frozenset(
         "no_worthwhile_candidate",
         "failed",
         "budget_exhausted",
+        # The campaign was deliberately stopped after an early stage
+        # (stop_after_stage), e.g. a discovery-only nightly. Not a verdict
+        # on any candidate; the receipt records how far the run got.
+        "discovery_complete",
     }
 )
 
@@ -90,6 +94,11 @@ class OptimizeConfig:
     # installed Codex CLI.
     search_agent_command: Sequence[str] | None = None
     repo_root: Path | None = None
+    # Stop after this pipeline stage completes instead of running to
+    # finalize. Must be one of PIPELINE_STAGES. An operational control, not
+    # run identity: resuming with a later (or no) stop stage continues the
+    # same campaign.
+    stop_after_stage: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -114,6 +123,7 @@ class OptimizeConfig:
                 else None
             ),
             "repo_root": str(self.repo_root) if self.repo_root else None,
+            "stop_after_stage": self.stop_after_stage,
         }
 
 

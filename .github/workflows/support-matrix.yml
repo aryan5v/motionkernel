@@ -1,0 +1,47 @@
+name: Support matrix
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  evidence-and-freshness:
+    name: Evidence valid, matrix generated not hand-edited
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Install dependencies
+        run: uv sync --extra dev
+      - name: Validate workload manifests
+        run: |
+          uv run python - <<'PY'
+          from pathlib import Path
+          from autokernel.workload import load_workload
+          paths = sorted(Path("workloads").glob("*.yaml"))
+          assert paths, "no workload manifests found"
+          for path in paths:
+              manifest = load_workload(path)
+              print(f"{path}: ok ({manifest.workload_id})")
+          PY
+      - name: Validate committed run records
+        run: |
+          uv run python - <<'PY'
+          from pathlib import Path
+          from autokernel.support import load_run_record
+          for path in sorted(Path("docs/support-evidence").glob("*.json")):
+              record = load_run_record(path)
+              print(f"{path}: ok ({record.workload_id} {record.arch} {record.outcome})")
+          PY
+      - name: Matrix matches the generator output
+        run: uv run python -m autokernel.support matrix --check

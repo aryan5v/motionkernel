@@ -274,6 +274,23 @@ def test_configured_search_agent_must_be_executable(
     assert "search_agent_missing" in _codes(report)
 
 
+def test_search_agent_check_is_skipped_when_campaign_stops_before_search(
+    tmp_path: Path, repo_root: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.delenv("MOTIONKERNEL_SIMULATE", raising=False)
+    monkeypatch.setattr(
+        "autokernel.optimize.preflight.shutil.which",
+        lambda name: None if name == "codex" else f"/usr/bin/{name}",
+    )
+    config = _config(tmp_path, repo_root, stop_after_stage="discover")
+    report, _ = _preflight(config)
+    assert report.passed
+    assert report.sections["search_agent"]["checked"] is False
+    assert report.sections["search_agent"]["skipped_reason"] == (
+        "campaign stops after discover; search never runs"
+    )
+
+
 def test_search_agent_check_is_skipped_and_recorded_in_simulation(
     tmp_path: Path, repo_root: Path, monkeypatch: pytest.MonkeyPatch
 ):

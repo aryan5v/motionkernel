@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 from . import OptimizeConfig, OptimizeError, run_optimize
-from .types import default_repo_root
+from .types import PIPELINE_STAGES, default_repo_root
 
 
 def _load_stage_commands(path: Path | None) -> dict[str, list[str]] | None:
@@ -127,6 +127,16 @@ def parser() -> argparse.ArgumentParser:
         "--no-resume", action="store_true", help="Ignore completed stages and start fresh"
     )
     result.add_argument(
+        "--stop-after-stage",
+        choices=PIPELINE_STAGES,
+        default=None,
+        help=(
+            "Stop after this pipeline stage completes instead of running to "
+            "finalize. The campaign terminates as discovery_complete and a "
+            "later resume is idempotent. Used by discovery-only nightlies."
+        ),
+    )
+    result.add_argument(
         "--repo-root",
         type=Path,
         default=None,
@@ -153,6 +163,7 @@ def main(argv: list[str] | None = None) -> int:
             stage_commands=_load_stage_commands(args.stage_commands),
             search_agent_command=_load_argv(args.search_agent_command),
             repo_root=repo_root,
+            stop_after_stage=args.stop_after_stage,
         )
         receipt = run_optimize(config, preflight_only=args.preflight_only)
     except OptimizeError as exc:
@@ -161,6 +172,11 @@ def main(argv: list[str] | None = None) -> int:
 
     print(json.dumps(receipt, indent=2))
     terminal = receipt.get("terminal") or receipt.get("status")
-    if terminal in {"promoted", "no_worthwhile_candidate", "preflight_passed"}:
+    if terminal in {
+        "promoted",
+        "no_worthwhile_candidate",
+        "preflight_passed",
+        "discovery_complete",
+    }:
         return 0
     return 1

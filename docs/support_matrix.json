@@ -1,0 +1,161 @@
+{
+  "schema": "motionkernel.support-matrix",
+  "schema_version": 1,
+  "generated_on": "2026-08-02",
+  "stale_days": 30,
+  "arches": [
+    "sm100",
+    "sm90"
+  ],
+  "rows": [
+    {
+      "family": "cosmos25",
+      "workload_id": "cosmos25-t2v-2b-704p",
+      "model_id": "KyleShao/Cosmos-Predict2.5-2B-Diffusers",
+      "cells": {
+        "sm100": {
+          "outcome": "no_worthwhile_candidate",
+          "stale": false,
+          "recorded_utc": "2026-08-01T00:00:00+00:00",
+          "evidence": "/mnt/nfs/vlm-aryan/cosmos-v1-proof-20260801/overnight/campaign",
+          "reason": "1 measured artifact bundle rejected at finalization (full pipeline completed)"
+        },
+        "sm90": {
+          "outcome": "not_attempted",
+          "stale": false
+        }
+      }
+    },
+    {
+      "family": "fastwan",
+      "workload_id": "fastwan-t2v-1.3b-480p",
+      "model_id": "FastVideo/FastWan2.1-T2V-1.3B-Diffusers",
+      "cells": {
+        "sm100": {
+          "outcome": "not_attempted",
+          "stale": false
+        },
+        "sm90": {
+          "outcome": "not_attempted",
+          "stale": false
+        }
+      }
+    },
+    {
+      "family": "hunyuan",
+      "workload_id": "hunyuan-t2v-480p",
+      "model_id": "hunyuanvideo-community/HunyuanVideo",
+      "cells": {
+        "sm100": {
+          "outcome": "not_attempted",
+          "stale": false
+        },
+        "sm90": {
+          "outcome": "not_attempted",
+          "stale": false
+        }
+      }
+    },
+    {
+      "family": "ltx",
+      "workload_id": "ltx-t2v-480p",
+      "model_id": "FastVideo/LTX2-Distilled-Diffusers",
+      "cells": {
+        "sm100": {
+          "outcome": "promoted",
+          "stale": false,
+          "recorded_utc": "2026-08-02T01:42:30+00:00",
+          "evidence": "/mnt/nfs/vlm-aryan/ltx-v1-r4-targeted-fix-20260801-203751"
+        },
+        "sm90": {
+          "outcome": "not_attempted",
+          "stale": false
+        }
+      }
+    },
+    {
+      "family": "wan",
+      "workload_id": "wan-t2v-1.3b-480p",
+      "model_id": "Wan-AI/Wan2.1-T2V-1.3B-Diffusers",
+      "cells": {
+        "sm100": {
+          "outcome": "no_worthwhile_candidate",
+          "stale": false,
+          "recorded_utc": "2026-07-31T00:00:00+00:00",
+          "evidence": "/mnt/nfs/vlm-aryan/task3-wan-v1-20260731-r3",
+          "reason": "measured artifact bundle rejected: end-to-end speedup 1.0073x below the 1.01x gate (byte_equal parity held)"
+        },
+        "sm90": {
+          "outcome": "not_attempted",
+          "stale": false
+        }
+      }
+    },
+    {
+      "family": "wan",
+      "workload_id": "wan-t2v-1.3b-480p-attention",
+      "model_id": "Wan-AI/Wan2.1-T2V-1.3B-Diffusers",
+      "cells": {
+        "sm100": {
+          "outcome": "no_worthwhile_candidate",
+          "stale": false,
+          "recorded_utc": "2026-08-02T19:00:00+00:00",
+          "evidence": "/mnt/nfs/vlm-aryan/attn-ab-1041",
+          "reason": "SAGE_ATTN (SageAttention 1.0.6) rejected: 0.8031x end-to-end median over 15 timed runs per arm, slower than the FLASH_ATTN baseline, and worst-frame SSIM 0.9353 below the 0.97 tier-2 floor (LPIPS 0.0378 passed). Effective backend verified as SAGE_ATTN. Native-arm CV 0.04%, inside the 3% ceiling. SLURM 1041 (timing), 1051 (fidelity)."
+        },
+        "sm90": {
+          "outcome": "not_attempted",
+          "stale": false
+        }
+      }
+    },
+    {
+      "family": "wan",
+      "workload_id": "wan-t2v-1.3b-480p-attention-vsa",
+      "model_id": "Wan-AI/Wan2.1-T2V-1.3B-Diffusers",
+      "cells": {
+        "sm100": {
+          "outcome": "no_worthwhile_candidate",
+          "stale": false,
+          "recorded_utc": "2026-08-02T19:15:00+00:00",
+          "evidence": "/mnt/nfs/vlm-aryan/vsa-ab-1046",
+          "reason": "VIDEO_SPARSE_ATTN rejected: 0.5169x end-to-end median over 15 timed runs per arm, nearly 2x slower than the FLASH_ATTN baseline, and worst-frame SSIM 0.9527 below the 0.97 tier-2 floor (LPIPS 0.0253 passed). Effective backend verified as VIDEO_SPARSE_ATTN. Native-arm CV 0.46%, inside the 3% ceiling. Run zero-shot on vanilla Wan; FastVideo's VSA numbers come from VSA-finetuned FastWan checkpoints. SLURM 1046 (timing), 1053 (fidelity)."
+        },
+        "sm90": {
+          "outcome": "not_attempted",
+          "stale": false
+        }
+      }
+    },
+    {
+      "family": "wan",
+      "workload_id": "wan-t2v-1.3b-720p",
+      "model_id": "Wan-AI/Wan2.1-T2V-1.3B-Diffusers",
+      "cells": {
+        "sm100": {
+          "outcome": "not_attempted",
+          "stale": false
+        },
+        "sm90": {
+          "outcome": "not_attempted",
+          "stale": false
+        }
+      }
+    },
+    {
+      "family": "wan",
+      "workload_id": "wan-t2v-14b-480p",
+      "model_id": "Wan-AI/Wan2.1-T2V-14B-Diffusers",
+      "cells": {
+        "sm100": {
+          "outcome": "not_attempted",
+          "stale": false
+        },
+        "sm90": {
+          "outcome": "not_attempted",
+          "stale": false
+        }
+      }
+    }
+  ]
+}
