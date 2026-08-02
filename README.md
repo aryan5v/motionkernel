@@ -25,9 +25,12 @@ inference time.
 
 ## Project Status
 
-The reusable kernel specification registry, production shape corpora,
-structured-output comparison, backward verification, `torch.compile`
-verification, and reproducible JSON result artifacts are implemented.
+MotionKernel V1 is proven end to end on FastVideo LTX2. A promoted transformer
+artifact passed strict independent correctness and hash verification, executed
+6,143 times with zero fallbacks, preserved byte-identical generated frames, and
+improved median end-to-end latency from 3.3646s to 3.0991s (1.0857x) across a
+15-run A/B on an NVIDIA GB200. An independent 15-run replication measured
+1.2514x. See [the V1 evidence report](docs/LTX_V1_R4_ROOT_CAUSE.md).
 
 The first video-specific pack covers three Wan boundaries: modulated
 pre-attention LayerNorm, post-attention gated residual plus LayerNorm, and the
@@ -37,11 +40,11 @@ production shape corpora on an NVIDIA GB200 (see
 operator results; complete model packs still require end-to-end benchmark
 publication before support is claimed.
 
-A model-independent discovery foundation is also in place: declarative
-FastVideo workload manifests, a resumable native-versus-optimized launcher
-bridge, metadata-only profiler ingestion, CPU FX graph capture with stable
-fingerprints, and impact ranking with an end-to-end floor. Graph-derived
-spec generation and generic artifact dispatch are the next stages.
+The model-independent pipeline includes declarative FastVideo workloads,
+resumable profiling, export graph capture, impact ranking, graph-derived spec
+generation, autonomous GPU search, strict independent validation, versioned
+artifact packaging, generic FastVideo dispatch, full-generation A/B validation,
+and fail-closed promotion.
 
 MotionKernel currently retains the `autokernel` Python import namespace for
 compatibility with the upstream project. The import namespace will only move
@@ -63,7 +66,48 @@ The agent reads `program.md` -- the "research org code" -- which contains compre
 
 Each experiment takes ~90 seconds. That's ~40 experiments/hour, ~320 overnight, across all kernels.
 
-## Quick Start
+## FastVideo Technical Preview
+
+Install the release candidate and check the GPU environment:
+
+```bash
+uv tool install 'git+https://github.com/aryan5v/motionkernel.git'
+motionkernel doctor --require-cuda --fastvideo-checkout /path/to/FastVideo
+motionkernel workload list
+```
+
+Run the canonical LTX2 campaign:
+
+```bash
+LTX_WORKLOAD="$(motionkernel workload path ltx_480p)"
+
+motionkernel optimize \
+  --fastvideo-checkout /path/to/FastVideo \
+  --model FastVideo/LTX2-Distilled-Diffusers \
+  --workload "$LTX_WORKLOAD" \
+  --baseline compile \
+  --budget-hours 10 \
+  --per-candidate-budget-seconds 3600 \
+  --output ./runs/ltx2
+```
+
+The command exits successfully only with `promoted`,
+`no_worthwhile_candidate`, or `preflight_passed`. A promoted artifact has
+passed isolated correctness, hash verification, real FastVideo dispatch,
+full-generation parity, and the configured end-to-end performance threshold.
+
+Inspect a resulting bundle without importing its executable payload:
+
+```bash
+motionkernel artifact verify ./runs/ltx2/artifacts/<artifact-id>
+motionkernel artifact inspect ./runs/ltx2/artifacts/<artifact-id>
+```
+
+The technical preview is currently validated for single-GPU LTX2 inference on
+GB200/sm100 with the packaged 480p workload. Other FastVideo models and GPU
+architectures are optimization targets, not yet validated support claims.
+
+## Source Quick Start
 
 **Requirements:** NVIDIA GPU (tested on H100/A100/RTX 4090), Python 3.10+, [uv](https://docs.astral.sh/uv/).
 
