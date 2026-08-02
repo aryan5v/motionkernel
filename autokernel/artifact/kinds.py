@@ -147,6 +147,7 @@ def validate_kind_fields(
     kind_name: str,
     declared: Mapping[str, Any],
     *,
+    common: frozenset[str] = frozenset(),
     region_fields: Mapping[str, frozenset[str]] | None = None,
 ) -> TargetKind:
     """Check that ``declared`` carries exactly what ``kind_name`` allows.
@@ -154,6 +155,12 @@ def validate_kind_fields(
     Args:
         kind_name: the declared ``target_kind``.
         declared: the raw operation-identity mapping.
+        common: fields every kind shares (identity, fingerprint, and so on).
+            Anything outside ``common`` and outside this kind's permitted set
+            is rejected. Passing it explicitly is what keeps this check
+            fail-closed: without it, a field added to the schema but never
+            attached to a kind would validate silently for *every* kind, which
+            is the quiet way a contract stops contracting.
         region_fields: kind-specific field names keyed by owning kind.
             Defaults to the registry, so a field belonging to a *different*
             kind is reported specifically -- that almost always means an
@@ -194,7 +201,7 @@ def validate_kind_fields(
             owned_elsewhere.setdefault(name, other_name)
 
     for name in declared:
-        if name in spec.permitted:
+        if name in spec.permitted or name in common:
             continue
         owner = owned_elsewhere.get(name)
         if owner is not None:
@@ -202,4 +209,8 @@ def validate_kind_fields(
                 f"target_kind {kind_name!r} must not declare {name!r}, "
                 f"which belongs to a {owner!r} target"
             )
+        raise ValueError(
+            f"target_kind {kind_name!r} must not declare {name!r}; it belongs "
+            f"to no registered kind"
+        )
     return spec
