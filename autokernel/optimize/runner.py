@@ -25,7 +25,7 @@ from .state import (
     utc_now,
     write_json_atomic,
 )
-from .types import PIPELINE_STAGES, RECEIPT_SCHEMA_VERSION, OptimizeConfig
+from .types import PIPELINE_STAGES, RECEIPT_SCHEMA_VERSION, TERMINAL_STATUSES, OptimizeConfig
 
 _RESUME_IDENTITY_FIELDS = (
     "fastvideo_checkout",
@@ -216,20 +216,28 @@ def run_optimize(
             raise OptimizeError("stored campaign config must be a JSON object")
         _validate_resume_config(stored_config, config)
         state = load_state(layout["state"])
-        if state.get("status") in {"promoted", "no_worthwhile_candidate", "failed", "budget_exhausted"}:
-            # Already terminal — rewrite morning report and return receipt.
-            if layout["receipt"].is_file():
-                receipt = read_json(layout["receipt"])
-            else:
-                receipt = build_receipt(
-                    state,
-                    config,
-                    terminal=str(state.get("terminal") or state.get("status")),
-                    message="campaign already terminal on resume",
-                )
-                write_json_atomic(layout["receipt"], receipt)
-            write_morning_report(layout["morning_report"], receipt=receipt)
-            return receipt
+        if state.get("status") in TERMINAL_STATUSES:
+            # A discovery-only stop is terminal for the *same* requested stop
+            # stage, so a nightly rerun is idempotent. Resuming with a later
+            # (or no) stop stage continues the campaign past it instead.
+            continues = (
+                state.get("status") == "discovery_complete"
+                and stored_config.get("stop_after_stage") != config.stop_after_stage
+            )
+            if not continues:
+                # Already terminal — rewrite morning report and return receipt.
+                if layout["receipt"].is_file():
+                    receipt = read_json(layout["receipt"])
+                else:
+                    receipt = build_receipt(
+                        state,
+                        config,
+                        terminal=str(state.get("terminal") or state.get("status")),
+                        message="campaign already terminal on resume",
+                    )
+                    write_json_atomic(layout["receipt"], receipt)
+                write_morning_report(layout["morning_report"], receipt=receipt)
+                return receipt
     else:
         # A deliberately fresh run must not expose an old terminal receipt
         # while new stages are still running.
@@ -258,26 +266,40 @@ def run_optimize(
         if stage_is_complete(state, stage) and result_path.is_file():
             stage_results[stage] = read_json(result_path)
 
+    if config.stop_after_stage is not None and config.stop_after_stage not in PIPELINE_STAGES:
+        raise OptimizeError(
+            f"stop_after_stage must be one of {list(PIPELINE_STAGES)}; "
+            f"got {config.stop_after_stage!r}"
+        )
+
+    stopped_early = False
     try:
         for stage in PIPELINE_STAGES:
             ensure_budget(state)
             if config.resume and stage_is_complete(state, stage):
-                continue
-            payload = run_stage(
-                stage,
-                config=config,
-                state=state,
-                state_path=layout["state"],
-            )
-            stage_results[stage] = payload
-            # Early exit if discover declares nothing worth searching.
-            if stage == "discover" and payload.get("recommendation") == "no_worthwhile_candidate":
-                break
-            if stage == "specgen" and payload.get("recommendation") == "no_worthwhile_candidate":
-                break
-            if stage in {"search", "isolated_validate"} and payload.get(
-                "recommendation"
-            ) == "no_worthwhile_candidate":
+                # Already done. The stop check below still applies, so a
+                # resumed discovery-only campaign terminates at the same
+                # stage instead of drifting past it.
+                pass
+            else:
+                payload = run_stage(
+                    stage,
+                    config=config,
+                    state=state,
+                    state_path=layout["state"],
+                )
+                stage_results[stage] = payload
+                # Early exit if discover declares nothing worth searching.
+                if stage == "discover" and payload.get("recommendation") == "no_worthwhile_candidate":
+                    break
+                if stage == "specgen" and payload.get("recommendation") == "no_worthwhile_candidate":
+                    break
+                if stage in {"search", "isolated_validate"} and payload.get(
+                    "recommendation"
+                ) == "no_worthwhile_candidate":
+                    break
+            if stage == config.stop_after_stage:
+                stopped_early = True
                 break
     except OptimizeError as exc:
         if "budget exhausted" in str(exc).lower():
@@ -298,11 +320,25 @@ def run_optimize(
         if workload.performance is not None
         else config.min_e2e_speedup
     )
-    terminal, message = _decide_terminal(
-        state,
-        stage_results,
-        min_e2e_speedup=max(config.min_e2e_speedup, workload_threshold),
-    )
+    discover_recommendation = (stage_results.get("discover") or {}).get("recommendation")
+    if stopped_early and discover_recommendation != "no_worthwhile_candidate":
+        # Stopped on request, not on a verdict. This is the discovery-only
+        # nightly path: the receipt records how far the run got and stays
+        # terminal so a rerun is idempotent instead of drifting onward.
+        terminal = "discovery_complete"
+        completed = [name for name in PIPELINE_STAGES if stage_is_complete(state, name)]
+        candidate_count = len(state.get("candidates") or [])
+        message = (
+            f"stopped after {config.stop_after_stage} as requested; "
+            f"completed stages: {', '.join(completed)}; "
+            f"candidates discovered: {candidate_count}"
+        )
+    else:
+        terminal, message = _decide_terminal(
+            state,
+            stage_results,
+            min_e2e_speedup=max(config.min_e2e_speedup, workload_threshold),
+        )
     state["status"] = terminal
     state["terminal"] = terminal
     if terminal in {"promoted", "no_worthwhile_candidate"}:

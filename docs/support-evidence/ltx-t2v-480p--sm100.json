@@ -1,0 +1,16 @@
+{
+  "schema": "motionkernel.support-run",
+  "schema_version": 1,
+  "workload_id": "ltx-t2v-480p",
+  "model_id": "FastVideo/LTX2-Distilled-Diffusers",
+  "family": "ltx",
+  "arch": "sm100",
+  "outcome": "promoted",
+  "recorded_utc": "2026-08-02T01:42:30+00:00",
+  "evidence": "/mnt/nfs/vlm-aryan/ltx-v1-r4-targeted-fix-20260801-203751",
+  "source": {
+    "artifact_id": "mk-2c92e356aa34bc0d-7df21b47-sm100",
+    "receipt_terminal": "promoted",
+    "note": "promoted by the real finalizer: byte_equal parity, e2e 1.0857x vs 1.01x gate (SLURM 998)"
+  }
+}

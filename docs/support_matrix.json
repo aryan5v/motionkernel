@@ -1,0 +1,110 @@
+{
+  "schema": "motionkernel.support-matrix",
+  "schema_version": 1,
+  "generated_on": "2026-08-02",
+  "stale_days": 30,
+  "arches": [
+    "sm100",
+    "sm90"
+  ],
+  "rows": [
+    {
+      "family": "cosmos25",
+      "workload_id": "cosmos25-t2v-2b-704p",
+      "model_id": "KyleShao/Cosmos-Predict2.5-2B-Diffusers",
+      "cells": {
+        "sm100": {
+          "outcome": "no_worthwhile_candidate",
+          "stale": false,
+          "recorded_utc": "2026-08-01T00:00:00+00:00",
+          "evidence": "/mnt/nfs/vlm-aryan/cosmos-v1-proof-20260801/overnight/campaign",
+          "reason": "1 measured artifact bundle rejected at finalization (full pipeline completed)"
+        },
+        "sm90": {
+          "outcome": "not_attempted",
+          "stale": false
+        }
+      }
+    },
+    {
+      "family": "fastwan",
+      "workload_id": "fastwan-t2v-1.3b-480p",
+      "model_id": "FastVideo/FastWan2.1-T2V-1.3B-Diffusers",
+      "cells": {
+        "sm100": {
+          "outcome": "not_attempted",
+          "stale": false
+        },
+        "sm90": {
+          "outcome": "not_attempted",
+          "stale": false
+        }
+      }
+    },
+    {
+      "family": "hunyuan",
+      "workload_id": "hunyuan-t2v-480p",
+      "model_id": "hunyuanvideo-community/HunyuanVideo",
+      "cells": {
+        "sm100": {
+          "outcome": "not_attempted",
+          "stale": false
+        },
+        "sm90": {
+          "outcome": "not_attempted",
+          "stale": false
+        }
+      }
+    },
+    {
+      "family": "ltx",
+      "workload_id": "ltx-t2v-480p",
+      "model_id": "FastVideo/LTX2-Distilled-Diffusers",
+      "cells": {
+        "sm100": {
+          "outcome": "promoted",
+          "stale": false,
+          "recorded_utc": "2026-08-02T01:42:30+00:00",
+          "evidence": "/mnt/nfs/vlm-aryan/ltx-v1-r4-targeted-fix-20260801-203751"
+        },
+        "sm90": {
+          "outcome": "not_attempted",
+          "stale": false
+        }
+      }
+    },
+    {
+      "family": "wan",
+      "workload_id": "wan-t2v-1.3b-480p",
+      "model_id": "Wan-AI/Wan2.1-T2V-1.3B-Diffusers",
+      "cells": {
+        "sm100": {
+          "outcome": "no_worthwhile_candidate",
+          "stale": false,
+          "recorded_utc": "2026-07-31T00:00:00+00:00",
+          "evidence": "/mnt/nfs/vlm-aryan/task3-wan-v1-20260731-r3",
+          "reason": "measured artifact bundle rejected: end-to-end speedup 1.0073x below the 1.01x gate (byte_equal parity held)"
+        },
+        "sm90": {
+          "outcome": "not_attempted",
+          "stale": false
+        }
+      }
+    },
+    {
+      "family": "wan",
+      "workload_id": "wan-t2v-14b-480p",
+      "model_id": "Wan-AI/Wan2.1-T2V-14B-Diffusers",
+      "cells": {
+        "sm100": {
+          "outcome": "not_attempted",
+          "stale": false
+        },
+        "sm90": {
+          "outcome": "not_attempted",
+          "stale": false
+        }
+      }
+    }
+  ]
+}
