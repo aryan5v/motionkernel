@@ -14,13 +14,19 @@ one version of every check. Nothing is duplicated and no import is rewritten.
     >>> motionkernel.specs is autokernel.specs
     True
 
-Why the rename cannot simply happen
+Why the rename has not happened yet
 -----------------------------------
-Every generated ``spec.py`` MotionKernel has ever emitted contains the line
-``from autokernel.specgen import spec_from_manifest``, and packaged artifact
-bundles are hash-verified: rewriting that import would invalidate the manifest
-of every artifact already produced, including promoted ones. The emitted import
-therefore stays ``autokernel`` until a migration that reissues artifacts.
+Not because artifacts pin it. Packaged bundles do not import this package at
+all: a bundle is ``candidate.py`` (torch and triton only), ``entry.py``
+(importlib, sys, pathlib) and ``manifest.json``. The generated ``spec.py`` that
+does ``from autokernel.specgen import ...`` lives in the candidate search
+workspace and is never packaged or hashed, so a rename would not invalidate any
+artifact.
+
+The real reasons are smaller and internal: 139 import sites across the
+repository, the import emitted into future generated specs, and resumable run
+directories whose existing ``spec.py`` files would stop importing. A rename is
+cheapest before the first release, not after.
 
 Staged migration
 ----------------

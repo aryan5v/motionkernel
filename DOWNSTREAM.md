@@ -66,11 +66,11 @@ not the product name, not a second product, and not a sign that you are running
 AutoKernel. It aliases the same modules, so `motionkernel.specs is
 autokernel.specs`.
 
-It remains for a concrete reason rather than inertia: every generated `spec.py`
-MotionKernel has emitted contains `from autokernel.specgen import
-spec_from_manifest`, and artifact bundles are hash-verified. Renaming the
-import would invalidate the manifest of every artifact already produced,
-including promoted ones.
+It is *not* pinned by artifacts. Packaged bundles carry `candidate.py`,
+`entry.py` and `manifest.json`, none of which import this package, so a rename
+would invalidate nothing. It remains for internal reasons -- 139 import sites
+and resumable run directories -- set out with their real cost in
+[docs/NAMESPACE_MIGRATION.md](docs/NAMESPACE_MIGRATION.md).
 
 `autokernel` is the namespace to use today: it is fully supported, resolvable
 by type checkers, and not deprecated. `motionkernel` works at runtime but is

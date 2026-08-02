@@ -20,10 +20,10 @@ The upstream MIT license and copyright (`Copyright (c) 2026 RightNow AI`) are pr
 |---|---:|---:|---:|
 | Unchanged from upstream | 45 | 9580 | 21.5% |
 | Modified descendants | 9 | 3615 | 8.1% |
-| MotionKernel-original | 140 | 31303 | 70.3% |
-| **Total** | **194** | **44498** | |
+| MotionKernel-original | 140 | 31321 | 70.4% |
+| **Total** | **194** | **44516** | |
 
-Inherited Python footprint (unchanged plus modified): **29.7%**. The remaining 70.3% -- the artifact format, graph discovery, spec generation, the workload system, the optimizer control plane, validation and promotion, the CLI, and the FastVideo bridge -- is MotionKernel work.
+Inherited Python footprint (unchanged plus modified): **29.6%**. The remaining 70.4% -- the artifact format, graph discovery, spec generation, the workload system, the optimizer control plane, validation and promotion, the CLI, and the FastVideo bridge -- is MotionKernel work.
 
 The largest remaining visible dependency is the `autokernel` import namespace, which is a compatibility namespace rather than the product name. See [docs/NAMESPACE_MIGRATION.md](docs/NAMESPACE_MIGRATION.md).
 

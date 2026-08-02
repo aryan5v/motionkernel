@@ -374,6 +374,17 @@ def test_both_packages_ship_a_py_typed_marker() -> None:
         assert marker.is_file(), f"{namespace} has no py.typed marker"
 
 
+def test_docs_do_not_claim_artifacts_pin_the_namespace() -> None:
+    """They do not. A packaged bundle is candidate.py, entry.py and
+    manifest.json; none of them import the package. An earlier draft used that
+    false claim as the main argument for keeping the compatibility namespace."""
+    for name in ("README.md", "DOWNSTREAM.md", "docs/NAMESPACE_MIGRATION.md"):
+        text = (REPO_ROOT / name).read_text(encoding="utf-8")
+        assert "invalidate the manifest of every artifact" not in text, (
+            f"{name} repeats a false artifact-pinning claim"
+        )
+
+
 def test_the_alias_limitation_is_documented() -> None:
     """The canonical namespace is invisible to type checkers. Shipping that
     without saying so would mislead anyone who follows the naming advice."""

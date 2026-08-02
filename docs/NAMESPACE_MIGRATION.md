@@ -15,24 +15,40 @@ inherited from [RightNow-AI/AutoKernel](https://github.com/RightNow-AI/autokerne
 the upstream project this one forked from. Seeing it in an import does not mean
 you are using AutoKernel.
 
-## Why it cannot simply be renamed
+## What a rename would actually cost
 
-Every generated `spec.py` MotionKernel has ever emitted contains:
+An earlier version of this document claimed the namespace was pinned by
+hash-verified artifacts. **That was wrong**, and the correction matters because
+it was the main argument for keeping `autokernel`.
 
-```python
-from autokernel.specgen import spec_from_manifest
-SPEC = spec_from_manifest(Path(__file__).with_name("manifest.json"))
+A packaged bundle contains `candidate.py`, `entry.py` and `manifest.json`, and
+none of them import this package:
+
+```
+candidate.py   import torch, triton, triton.language
+entry.py       import importlib.util, sys, pathlib
 ```
 
-Packaged artifact bundles are hash-verified: `artifact.json` pins the SHA-256 of
-every file it declares, and the runtime refuses to load a bundle whose bytes
-have changed. Rewriting that import would therefore invalidate the manifest of
-every artifact already produced — including promoted ones already dispatched in
-production — and there is no way for a consumer to repair them, because
-repairing them is exactly the change the hash is there to detect.
+The only occurrence of the string is `"autokernel_runtime_candidate"` in
+`entry.py`, which is a synthetic `sys.modules` key passed to
+`spec_from_file_location`, not an import. The generated `spec.py` that does
+`from autokernel.specgen import spec_from_manifest` lives in the candidate
+*search workspace* and is never packaged, hashed, or shipped.
 
-A mass `sed` across the repository would also break any downstream user who
-imports `autokernel` today, for no functional gain.
+**A rename would not invalidate any artifact, promoted or otherwise.**
+
+The genuine cost is internal and bounded:
+
+| What | Scale |
+|---|---|
+| Import sites in the repository | 139 lines (85 in tests, 35 in the package, ~19 in root harness and examples) |
+| Inherited-upstream files affected | 2 (`bench.py`, `extract.py`), both already modified descendants |
+| Emitted import in future generated specs | one string in `specgen/generator.py` |
+| Resumable run directories | existing `spec.py` files would stop importing |
+| Externally released versions to keep working | none — the distribution has never been tagged or published |
+
+That last row is the important one. A rename is cheapest now, before the first
+public release, and becomes genuinely expensive afterwards.
 
 ## Phase 1 (this release)
 

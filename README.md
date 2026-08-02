@@ -59,10 +59,11 @@ from autokernel.specs import KernelSpec
 ```
 
 `autokernel` is a **compatibility namespace** inherited from upstream — a name,
-not a support level. It is fully supported, it is what type checkers and IDEs
-resolve, and it is what every generated `spec.py` imports. It stays because
-artifact bundles are hash-verified, so renaming the import would invalidate
-artifacts that already exist.
+not a support level. It is fully supported and it is what type checkers and
+IDEs resolve. It is not pinned by artifacts: packaged bundles do not import it.
+It remains for internal reasons (139 import sites, and resumable run
+directories) that are documented, along with what a rename would really cost,
+in [docs/NAMESPACE_MIGRATION.md](docs/NAMESPACE_MIGRATION.md).
 
 A `motionkernel` import namespace also works at runtime and aliases the same
 modules (`motionkernel.specs is autokernel.specs`, with shared class identity).

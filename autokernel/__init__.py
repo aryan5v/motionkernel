@@ -4,11 +4,12 @@ The product is **MotionKernel**; the distribution on PyPI is ``motionkernel``.
 ``autokernel`` is a *compatibility namespace* inherited from the upstream
 project, not a second product and not the current name of this one.
 
-It is still the namespace that holds the implementation because every
-generated ``spec.py`` MotionKernel has emitted contains
-``from autokernel.specgen import spec_from_manifest``, and packaged artifact
-bundles are hash-verified. Renaming the import would invalidate the manifest of
-every artifact already produced, including promoted ones.
+It still holds the implementation for internal reasons rather than
+compatibility ones. Packaged artifact bundles do not import this package --
+they carry only ``candidate.py``, ``entry.py`` and ``manifest.json`` -- so a
+rename would not invalidate any artifact. What a rename does touch is 139
+import sites, the import emitted into future generated specs, and resumable run
+directories.
 
 New code should import from :mod:`motionkernel`, which aliases this package so
 that ``motionkernel.specs is autokernel.specs``. See
