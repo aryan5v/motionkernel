@@ -29,7 +29,7 @@ from autokernel.discovery import (
     write_discovery_report,
 )
 from autokernel.specgen import SpecGenerationError, write_generated_artifacts
-from autokernel.workload import WorkloadError, load_workload
+from autokernel.workload import ParitySpec, WorkloadError, load_workload
 from autokernel.workload.launcher import run_ab, run_mode
 from autokernel.workload.result import (
     classify_end_to_end,
@@ -517,20 +517,15 @@ def _end_to_end_validate(run_dir: Path, config: Mapping[str, Any]) -> dict[str, 
         min_speedup=threshold,
         max_peak_memory_regression=memory_limit,
     )
+    frame_atol, frame_rtol = (
+        workload.parity or ParitySpec()
+    ).frame_tolerances()
     parity = compare_frame_outputs(
         native.frames_path,
         candidate.frames_path,
         policy=workload.parity.policy if workload.parity else "byte_equal",
-        atol=(
-            workload.parity.atol
-            if workload.parity and workload.parity.atol is not None
-            else 0.0
-        ),
-        rtol=(
-            workload.parity.rtol
-            if workload.parity and workload.parity.rtol is not None
-            else 0.0
-        ),
+        atol=frame_atol,
+        rtol=frame_rtol,
     )
     selected, diagnostics = _dispatch_selected(diagnostics_path)
     classification = performance.get("classification")
@@ -638,7 +633,14 @@ def _finalize(run_dir: Path, config: Mapping[str, Any]) -> dict[str, Any]:
             and math.isfinite(float(speedup))
             else None
         ),
-        stage_status="failed" if validated.get("recommendation") == "failed" else "ok",
+        # Whether the stage *ran*, not whether its verdict passed. Collapsing
+        # a failing verdict into "failed" here made every quarantine report
+        # "the end-to-end validation stage did not complete", which in r4 was
+        # untrue -- the stage completed and returned a definite negative -- and
+        # suppressed the specific reason. parity_passed, artifact_selected,
+        # classification and speedup are all populated above; decide() reads
+        # them and names the actual cause.
+        stage_status="ok" if validated.get("status") == "ok" else "failed",
         parity_policy=parity_policy,
         baseline_ref=str(artifacts.get("native_result") or ""),
         candidate_ref=str(artifacts.get("candidate_result") or ""),

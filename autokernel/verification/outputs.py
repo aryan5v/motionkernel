@@ -33,6 +33,7 @@ from typing import Any, Iterable, Mapping, Sequence
 
 from ..specs.dtypes import canonical_dtype_name
 from ..specs.types import OutputSpec, Tolerance
+from .policy import ParityPolicy, resolve_leaf_tolerance
 
 __all__ = [
     "DEFAULT_TOLERANCE",
@@ -251,6 +252,14 @@ def _tolerance_for(
     return tolerances.get(name, default)
 
 
+def _canonical_name_or_none(leaf: Any) -> str | None:
+    """Canonical dtype name for a tensor leaf, or ``None`` when it has none."""
+    try:
+        return canonical_dtype_name(leaf.dtype)
+    except ValueError:
+        return None
+
+
 def _metadata_equal(candidate: Any, expected: Any) -> bool:
     try:
         equal = candidate == expected
@@ -269,11 +278,26 @@ def compare_tensor_leaf(
     candidate: Any,
     expected: Any,
     tolerance: Tolerance,
+    *,
+    exact: bool = False,
+    max_absolute_error: float | None = None,
+    check_layout: bool = False,
 ) -> LeafRecord:
     """Compare two tensor leaves with statistics, NaN/Inf flags and a reason.
 
     Public so other verifiers (e.g. gradient comparison) can reuse the exact
     forward-comparison semantics.
+
+    Args:
+        exact: require bitwise equality. Set by a ``byte_equal`` parity policy;
+            ``tolerance`` is then ignored entirely.
+        max_absolute_error: hard ceiling applied on top of ``tolerance``. A
+            relative tolerance scales with the reference magnitude, so on a
+            tensor whose values reach 1e6 an rtol of 1e-2 silently permits an
+            absolute error of 1e4. This cap is what makes that visible.
+        check_layout: also require matching strides. A kernel that returns the
+            right values in the wrong layout satisfies ``allclose`` but changes
+            what every downstream consumer reads.
     """
     torch = _torch()
     is_float = candidate.is_floating_point()
@@ -298,6 +322,22 @@ def compare_tensor_leaf(
             kind="tensor",
             match=False,
             reason=f"dtype mismatch: {candidate.dtype} vs {expected.dtype}",
+            max_abs_error=float("inf"),
+            mean_abs_error=float("inf"),
+            pct_within_tol=0.0,
+            has_nan=has_nan,
+            has_inf=has_inf,
+        )
+
+    if check_layout and candidate.stride() != expected.stride():
+        return LeafRecord(
+            path=path,
+            kind="tensor",
+            match=False,
+            reason=(
+                f"layout mismatch: stride {tuple(candidate.stride())} vs "
+                f"{tuple(expected.stride())}"
+            ),
             max_abs_error=float("inf"),
             mean_abs_error=float("inf"),
             pct_within_tol=0.0,
@@ -331,20 +371,96 @@ def compare_tensor_leaf(
             pct_within_tol=100.0,
         )
 
+    if exact:
+        # A byte_equal workload admits no numerical difference at all. Compare
+        # the raw tensors, not their float() upcasts: two distinct bfloat16
+        # values can share a float32 image only if they were already equal, but
+        # comparing the originals keeps the check honest for every dtype.
+        equal = bool(torch.equal(candidate, expected))
+        abs_diff = (out_f - exp_f).abs()
+        finite_diff = abs_diff[torch.isfinite(abs_diff)]
+        max_abs = float(finite_diff.max().item()) if finite_diff.numel() else 0.0
+        mean_abs = float(finite_diff.mean().item()) if finite_diff.numel() else 0.0
+        differing = int((out_f != exp_f).sum().item())
+        reason = ""
+        if not equal:
+            reason = (
+                f"outputs are not bitwise equal under an exact parity policy: "
+                f"{differing} differing element(s), max_abs_error={max_abs:.6e}"
+            )
+            if has_nan:
+                reason += "; output contains NaN"
+            elif has_inf:
+                reason += "; output contains infinity"
+        return LeafRecord(
+            path=path,
+            kind="tensor",
+            match=equal,
+            reason=reason,
+            max_abs_error=max_abs,
+            mean_abs_error=mean_abs,
+            pct_within_tol=100.0 if equal else 0.0,
+            has_nan=has_nan,
+            has_inf=has_inf,
+        )
+
+    # Non-finite handling. ``inf - inf`` is NaN, so a candidate that reproduces
+    # the reference's infinities used to report ``max_abs_error=nan`` while
+    # ``allclose`` returned True. Compare the non-finite *pattern* explicitly
+    # and derive statistics only from the finite elements.
+    expected_nan = torch.isnan(exp_f)
+    expected_inf = torch.isinf(exp_f)
+    candidate_nan = torch.isnan(out_f)
+    candidate_inf = torch.isinf(out_f)
+    nonfinite_mismatch = ""
+    if not bool(torch.equal(candidate_nan, expected_nan)):
+        nonfinite_mismatch = "NaN positions differ from the reference"
+    elif not bool(torch.equal(candidate_inf, expected_inf)):
+        nonfinite_mismatch = "infinity positions differ from the reference"
+    elif bool((candidate_inf & (torch.sign(out_f) != torch.sign(exp_f))).any().item()):
+        nonfinite_mismatch = "infinity signs differ from the reference"
+
     abs_diff = (out_f - exp_f).abs()
-    max_abs = abs_diff.max().item()
-    mean_abs = abs_diff.mean().item()
-    within = (
-        (abs_diff <= tolerance.atol + tolerance.rtol * exp_f.abs()).float().mean().item()
-        * 100.0
+    finite = torch.isfinite(abs_diff)
+    finite_diff = abs_diff[finite]
+    max_abs = float(finite_diff.max().item()) if finite_diff.numel() else 0.0
+    mean_abs = float(finite_diff.mean().item()) if finite_diff.numel() else 0.0
+
+    allowed = tolerance.atol + tolerance.rtol * exp_f.abs()
+    within_mask = (abs_diff <= allowed) | (candidate_nan & expected_nan) | (
+        candidate_inf & expected_inf & (torch.sign(out_f) == torch.sign(exp_f))
     )
-    match = bool(torch.allclose(out_f, exp_f, atol=tolerance.atol, rtol=tolerance.rtol))
+    within = float(within_mask.float().mean().item()) * 100.0
+    match = bool(within_mask.all().item()) and not nonfinite_mismatch
+
+    cap_exceeded = (
+        max_absolute_error is not None and max_abs > max_absolute_error
+    )
+    if match and cap_exceeded:
+        match = False
+
     reason = ""
-    if not match:
+    if nonfinite_mismatch:
+        reason = nonfinite_mismatch
+    elif cap_exceeded and within >= 100.0:
+        # Everything sat inside the relative tolerance, yet the absolute error
+        # is enormous. That is exactly the R4 VAE signature: rtol=1e-2 against
+        # reference values near 3e5 licensed an error of 32768.0.
+        reason = (
+            f"max_abs_error={max_abs:.6e} exceeds the policy's absolute ceiling "
+            f"{max_absolute_error:.6e} despite satisfying "
+            f"tol(atol={tolerance.atol}, rtol={tolerance.rtol}); the relative "
+            f"tolerance is being scaled by large reference values"
+        )
+    elif not match:
         reason = (
             f"max_abs_error={max_abs:.6e} exceeds "
             f"tol(atol={tolerance.atol}, rtol={tolerance.rtol})"
         )
+        if cap_exceeded:
+            reason += (
+                f" and the absolute ceiling {max_absolute_error:.6e}"
+            )
         if has_nan:
             reason += "; output contains NaN"
         elif has_inf:
@@ -370,6 +486,7 @@ def compare_output_trees(
     output_spec: OutputSpec | None = None,
     default_tolerance: Tolerance = DEFAULT_TOLERANCE,
     relax: float = 1.0,
+    policy: ParityPolicy | None = None,
 ) -> TreeComparison:
     """Compare two output trees leaf by leaf.
 
@@ -384,7 +501,13 @@ def compare_output_trees(
         default_tolerance: fallback for leaf dtypes the mapping does not
             cover (matches the historical harness default of 1e-2/1e-2).
         relax: multiplies both tolerances (used by the numerical-stability
-            stage for adversarial inputs).
+            stage for adversarial inputs). An exact policy clamps this to 1.0:
+            widening a zero tolerance is meaningless, and widening it for
+            adversarial inputs is how R4 accepted a 32768.0 error.
+        policy: the workload's parity contract. ``None`` preserves the
+            historical tolerance-only behaviour for callers that have no
+            workload in hand; passing a policy is what makes ``byte_equal``
+            actually mean byte-equal at this layer.
     """
     included = output_spec.included_paths if output_spec is not None else None
     compare_meta = output_spec.compare_non_tensors if output_spec is not None else True
@@ -405,15 +528,43 @@ def compare_output_trees(
             structure_match=False,
         )
 
+    effective_relax = policy.effective_relax(relax) if policy is not None else relax
+    exact = policy.exact if policy is not None else False
+    abs_cap = policy.max_absolute_error if policy is not None else None
+
     records: list[LeafRecord] = []
     exp_map = dict(exp_leaves)
     for path, cand_leaf in cand_leaves:
         exp_leaf = exp_map[path]
         if _is_tensor(cand_leaf):
-            tol = _tolerance_for(exp_leaf, tolerances, default_tolerance)
-            if relax != 1.0:
-                tol = Tolerance(atol=tol.atol * relax, rtol=tol.rtol * relax)
-            records.append(compare_tensor_leaf(path, cand_leaf, exp_leaf, tol))
+            if policy is None:
+                tol = _tolerance_for(exp_leaf, tolerances, default_tolerance)
+            elif not exp_leaf.is_floating_point():
+                tol = Tolerance(atol=0.0, rtol=0.0)
+            else:
+                tol = resolve_leaf_tolerance(
+                    _canonical_name_or_none(exp_leaf),
+                    tolerances,
+                    policy,
+                    default=default_tolerance,
+                    path=path,
+                )
+            if effective_relax != 1.0:
+                tol = Tolerance(
+                    atol=tol.atol * effective_relax,
+                    rtol=tol.rtol * effective_relax,
+                )
+            records.append(
+                compare_tensor_leaf(
+                    path,
+                    cand_leaf,
+                    exp_leaf,
+                    tol,
+                    exact=exact,
+                    max_absolute_error=abs_cap,
+                    check_layout=exact,
+                )
+            )
             continue
         if not compare_meta:
             records.append(

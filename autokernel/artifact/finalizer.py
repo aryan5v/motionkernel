@@ -127,7 +127,7 @@ class GenerationOutcome:
         if self.stage_status != "ok":
             return (
                 "quarantined",
-                "held: the end-to-end validation stage did not complete",
+                "held: the end-to-end validation stage did not run to completion",
             )
         if not self.parity_passed:
             return (
@@ -273,7 +273,7 @@ def finalize_bundle(
             bundle_dir=source,
             manifest_path=str(directory / MANIFEST_FILENAME),
             decision="quarantined",
-            reason=reason,
+            reason=manifest.promotion.reason,
             changed=False,
             manifest=manifest,
         )

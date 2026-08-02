@@ -42,6 +42,15 @@ from .outputs import (
     flatten_output_tree,
     tree_has_nan_or_inf,
 )
+from .policy import (
+    APPROXIMATE_MATH_MARKERS,
+    EXACT_POLICIES,
+    KNOWN_POLICIES,
+    ParityPolicy,
+    ToleranceResolutionError,
+    detect_approximate_math,
+    resolve_leaf_tolerance,
+)
 from .results import (
     RESULT_SCHEMA_VERSION,
     collect_environment_metadata,
@@ -50,8 +59,11 @@ from .results import (
 )
 
 __all__ = [
+    "APPROXIMATE_MATH_MARKERS",
     "CORPUS_SCHEMA_VERSION",
     "DEFAULT_TOLERANCE",
+    "EXACT_POLICIES",
+    "KNOWN_POLICIES",
     "RESULT_SCHEMA_VERSION",
     "BackwardReport",
     "CompileCaseRecord",
@@ -61,7 +73,9 @@ __all__ = [
     "GradientRecord",
     "LeafRecord",
     "OutputTreeError",
+    "ParityPolicy",
     "ShapeCorpus",
+    "ToleranceResolutionError",
     "TreeComparison",
     "check_backward",
     "check_compile",
@@ -69,8 +83,10 @@ __all__ = [
     "compare_deterministic",
     "compare_output_trees",
     "compare_tensor_leaf",
+    "detect_approximate_math",
     "flatten_output_tree",
     "load_shape_corpus",
+    "resolve_leaf_tolerance",
     "result_envelope",
     "tree_has_nan_or_inf",
     "validate_corpus_against_spec",

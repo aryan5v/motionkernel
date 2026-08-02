@@ -77,6 +77,7 @@ _PARITY_FIELDS = {
     "policy",
     "atol",
     "rtol",
+    "allow_approximate_math",
 }
 _PERFORMANCE_FIELDS = {
     "min_end_to_end_speedup",
@@ -484,6 +485,7 @@ class ParitySpec:
     policy: str = "byte_equal"
     atol: float | None = None
     rtol: float | None = None
+    allow_approximate_math: bool | None = None
 
     @classmethod
     def from_dict(
@@ -504,6 +506,19 @@ class ParitySpec:
             )
         atol = raw.get("atol")
         rtol = raw.get("rtol")
+        allow_approximate_math = raw.get("allow_approximate_math")
+        if policy == "tolerance" and (atol is None or rtol is None):
+            raise _fail(
+                source,
+                location,
+                "tolerance policy requires explicit atol and rtol",
+            )
+        if policy == "byte_equal" and allow_approximate_math is True:
+            raise _fail(
+                source,
+                f"{location}.allow_approximate_math",
+                "must be false for byte_equal policy",
+            )
         return cls(
             policy=policy,
             atol=(
@@ -520,7 +535,27 @@ class ParitySpec:
                     rtol, source, f"{location}.rtol", minimum=0.0
                 )
             ),
+            allow_approximate_math=(
+                None
+                if allow_approximate_math is None
+                else _bool(
+                    allow_approximate_math,
+                    source,
+                    f"{location}.allow_approximate_math",
+                    False,
+                )
+            ),
         )
+
+    def frame_tolerances(self) -> tuple[float, float]:
+        """Return declared full-frame tolerances without inventing values."""
+        if self.policy == "tolerance":
+            if self.atol is None or self.rtol is None:  # defensive for direct construction
+                raise WorkloadError(
+                    "tolerance parity policy requires explicit atol and rtol"
+                )
+            return self.atol, self.rtol
+        return 0.0, 0.0
 
     def as_dict(self) -> dict[str, Any]:
         payload: dict[str, Any] = {"policy": self.policy}
@@ -528,6 +563,8 @@ class ParitySpec:
             payload["atol"] = self.atol
         if self.rtol is not None:
             payload["rtol"] = self.rtol
+        if self.allow_approximate_math is not None:
+            payload["allow_approximate_math"] = self.allow_approximate_math
         return payload
 
 

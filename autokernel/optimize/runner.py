@@ -7,6 +7,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from autokernel.workload import load_workload
+
 from .preflight import PreflightError, execute_preflight, write_run_contract
 from .report import write_morning_report
 from .stages import run_stage
@@ -290,10 +292,16 @@ def run_optimize(
         write_morning_report(layout["morning_report"], receipt=receipt)
         return receipt
 
+    workload = load_workload(config.workload)
+    workload_threshold = (
+        workload.performance.min_end_to_end_speedup
+        if workload.performance is not None
+        else config.min_e2e_speedup
+    )
     terminal, message = _decide_terminal(
         state,
         stage_results,
-        min_e2e_speedup=config.min_e2e_speedup,
+        min_e2e_speedup=max(config.min_e2e_speedup, workload_threshold),
     )
     state["status"] = terminal
     state["terminal"] = terminal

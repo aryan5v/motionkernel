@@ -164,7 +164,26 @@ def _aggregate_region_timing(
 
     total_cuda = sum(row.cuda_time_us for row in profiler_rows)
     total_self_cuda = sum(attributed_self)
-    total_calls = sum(row.calls for row in profiler_rows)
+
+    # ``calls`` means "how many times was this region invoked", because that is
+    # what the impact model multiplies a per-call saving by. Summing the call
+    # counts of every matched profiler row answers a different question -- how
+    # many kernel launches happened inside the region -- and the two diverge by
+    # orders of magnitude once a region matches more than one row. Run r4
+    # reported calls=195661 for transformer.model.transformer_blocks, a region
+    # FastVideo's dispatcher observed being invoked 1151 times; the 195661 was
+    # the aten-event count across 48 blocks x 8 steps x 3 generations.
+    #
+    # The record_function range named after the region is one range per
+    # invocation, so it is the authoritative count when present.
+    named_rows = [row for row in profiler_rows if row.name == region.name]
+    if named_rows:
+        total_calls = sum(row.calls for row in named_rows)
+    else:
+        # No range for this region: every matched row saw the region at least
+        # once, so the largest single row bounds the invocation count from
+        # below without inventing launches the region never made.
+        total_calls = max(row.calls for row in profiler_rows)
 
     # Fall back to region's own timing if no profiler data
     if total_self_cuda == 0:

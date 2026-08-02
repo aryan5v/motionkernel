@@ -30,6 +30,7 @@ import signal
 import sys
 import time
 import traceback
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
@@ -63,6 +64,11 @@ from autokernel.verification import (  # noqa: E402
     result_envelope,
     tree_has_nan_or_inf,
     write_result_atomic,
+)
+from autokernel.verification.policy import (  # noqa: E402
+    KNOWN_POLICIES,
+    ParityPolicy,
+    detect_approximate_math,
 )
 from autokernel.verification.corpus import (  # noqa: E402
     CorpusError,
@@ -395,6 +401,13 @@ def _load_validated_corpus(args: argparse.Namespace, spec: KernelSpec):
 # 3. CORRECTNESS TESTING (5 stages)
 # =========================================================================
 
+#: Parity contract for this benchmark process, set once from ``--parity-policy``.
+#: Module state rather than a threaded argument because every correctness stage
+#: must answer to the same contract; a stage that could be handed a different
+#: policy is exactly the fail-open shape this replaces.
+_PARITY_POLICY: ParityPolicy = ParityPolicy(policy="tolerance")
+
+
 def _compare_outputs(output: Any, expected: Any, spec: KernelSpec, *, relax: float = 1.0) -> TreeComparison:
     """Compare candidate and reference output trees using the spec's policy.
 
@@ -402,6 +415,10 @@ def _compare_outputs(output: Any, expected: Any, spec: KernelSpec, *, relax: flo
     the tolerance declared for the benchmark dtype is applied, and the
     failure reason is unchanged. Structured outputs are compared leaf by leaf
     with stable diagnostic paths.
+
+    The workload's parity policy governs the comparison: under ``byte_equal``
+    every leaf must be bitwise identical, ``relax`` is ignored, and an
+    undeclared dtype raises instead of silently defaulting to 1e-2/1e-2.
     """
     return compare_output_trees(
         output,
@@ -409,6 +426,7 @@ def _compare_outputs(output: Any, expected: Any, spec: KernelSpec, *, relax: flo
         spec.tolerances,
         output_spec=spec.output_spec,
         relax=relax,
+        policy=_PARITY_POLICY,
     )
 
 
@@ -1181,6 +1199,38 @@ def main():
             "Correctness always uses the eager reference."
         ),
     )
+    parser.add_argument(
+        "--parity-policy",
+        choices=tuple(sorted(KNOWN_POLICIES)),
+        default="tolerance",
+        help=(
+            "Output contract this candidate must satisfy, taken from the "
+            "workload's parity.policy. 'byte_equal' requires bitwise-identical "
+            "outputs, disables adversarial-input tolerance relaxation, and "
+            "rejects approximate-math intrinsics. Campaigns must pass the "
+            "workload's real policy; the default only serves standalone use."
+        ),
+    )
+    parser.add_argument(
+        "--max-absolute-error",
+        type=float,
+        default=None,
+        metavar="VALUE",
+        help=(
+            "Hard ceiling on absolute error, applied on top of atol/rtol. A "
+            "relative tolerance scales with reference magnitude, so on tensors "
+            "reaching 1e6 an rtol of 1e-2 silently permits 1e4 of error."
+        ),
+    )
+    parser.add_argument(
+        "--allow-approximate-math",
+        action="store_true",
+        help=(
+            "Permit approximate hardware intrinsics (rcp.approx, tanh.approx, "
+            "__expf, tf32) even under an exact parity policy. Off by default: "
+            "such a kernel cannot reproduce an eager reference bitwise."
+        ),
+    )
     parser.add_argument("--result-json", type=str,
                         default=os.path.join(_SCRIPT_DIR, "workspace", "bench_result.json"),
                         metavar="PATH",
@@ -1189,6 +1239,13 @@ def main():
     args = parser.parse_args()
     if args.shape_corpus_only and not args.shape_corpus:
         parser.error("--shape-corpus-only requires --shape-corpus PATH")
+
+    global _PARITY_POLICY
+    _PARITY_POLICY = ParityPolicy(
+        policy=args.parity_policy,
+        max_absolute_error=args.max_absolute_error,
+        allow_approximate_math=True if args.allow_approximate_math else None,
+    )
 
     # ------------------------------------------------------------------
     # Import the kernel module
@@ -1256,6 +1313,33 @@ def main():
 
         print(f"kernel_type: {kernel_type}")
         print("kernel_module: kernel.py loaded successfully")
+        print(f"parity_policy: {_PARITY_POLICY.policy}"
+              f" (exact={_PARITY_POLICY.exact},"
+              f" approximate_math={'allowed' if _PARITY_POLICY.approximate_math_allowed else 'rejected'},"
+              f" relax={'allowed' if _PARITY_POLICY.relaxation_allowed else 'disabled'})")
+
+        # Screen the source before spending GPU time. A kernel built on
+        # approximate hardware intrinsics cannot reproduce an eager reference
+        # bitwise, so under an exact policy it is already known to fail; the
+        # only question is whether the harness notices before or after it
+        # reports a speedup. R4 reported one.
+        if not _PARITY_POLICY.approximate_math_allowed:
+            source_path = getattr(kernel_module, "__file__", None)
+            source = ""
+            if source_path and os.path.exists(source_path):
+                with open(source_path, "r", encoding="utf-8", errors="replace") as handle:
+                    source = handle.read()
+            markers = detect_approximate_math(source)
+            if markers:
+                print("\n=== CORRECTNESS ===")
+                print(f"  FAIL: kernel uses approximate math {list(markers)} but the "
+                      f"workload declares parity policy '{_PARITY_POLICY.policy}', "
+                      f"which requires bitwise-identical outputs.")
+                print("  Pass --allow-approximate-math only if the workload "
+                      "explicitly permits approximate parity.")
+                print("\ncorrectness: FAIL")
+                print("FORWARD_CORRECTNESS: FAIL")
+                sys.exit(1)
 
     except SyntaxError as e:
         print("\nERROR: kernel.py has a syntax error:")
@@ -1485,6 +1569,7 @@ def main():
             "check_backward": backward_requested,
             "check_compile": compile_requested,
             "baseline_mode": args.baseline,
+            "parity_policy": _PARITY_POLICY.as_dict(),
         },
         gpu=asdict(gpu),
         shape_corpus=corpus_identity,

@@ -33,14 +33,23 @@ STAGE_RESULT_SCHEMA_VERSION = 1
 CAMPAIGN_STATE_SCHEMA_VERSION = 1
 RECEIPT_SCHEMA_VERSION = 1
 
+#: Candidate status after each stage. These record *how far a candidate got*,
+#: not whether it succeeded: the authoritative verdict is the artifact's
+#: promotion decision, which finalize writes into each bundle.
+#:
+#: Run r4 ended with all four candidates reading ``status: finalized`` while
+#: every artifact decision was ``quarantined`` and nothing was promoted. Read as
+#: outcomes -- which is how they read -- that says the opposite of what
+#: happened. The names now say "reached this stage" so the two cannot be
+#: confused.
 CANDIDATE_STAGE_STATUS: dict[str, str] = {
     "discover": "discovered",
     "specgen": "specified",
     "search": "searched",
-    "isolated_validate": "isolated_validated",
+    "isolated_validate": "isolated_validate_reached",
     "package": "packaged",
-    "end_to_end_validate": "end_to_end_validated",
-    "finalize": "finalized",
+    "end_to_end_validate": "end_to_end_validate_reached",
+    "finalize": "finalize_reached",
 }
 
 # Default minimum end-to-end speedup required for promotion (1%).
