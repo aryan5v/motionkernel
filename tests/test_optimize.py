@@ -188,6 +188,30 @@ def test_resume_skips_durable_completed_stages(
     assert baseline_result.read_bytes() == original
 
 
+def test_resume_reopens_failed_campaign_at_first_incomplete_stage(
+    tmp_path: Path, repo_root: Path, monkeypatch: pytest.MonkeyPatch
+):
+    _simulate(monkeypatch, "fail_at:package")
+    config = _config(tmp_path, repo_root)
+
+    failed = run_optimize(config)
+
+    assert failed["terminal"] == "failed"
+    assert failed["completed_stages"] == list(PIPELINE_STAGES[:6])
+    baseline_result = config.output / "stages" / "baseline" / "result.json"
+    original = baseline_result.read_bytes()
+
+    # Model an operator fixing the package implementation and resuming the
+    # same immutable campaign rather than paying for completed GPU work again.
+    _simulate(monkeypatch, "promoted")
+    resumed = run_optimize(config)
+
+    assert resumed["terminal"] == "promoted"
+    assert resumed["completed_stages"] == list(PIPELINE_STAGES)
+    assert resumed["failed_stages"] == {}
+    assert baseline_result.read_bytes() == original
+
+
 def test_resume_rejects_campaign_identity_drift(
     tmp_path: Path, repo_root: Path, monkeypatch: pytest.MonkeyPatch
 ):

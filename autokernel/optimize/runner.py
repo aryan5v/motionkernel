@@ -216,7 +216,8 @@ def run_optimize(
             raise OptimizeError("stored campaign config must be a JSON object")
         _validate_resume_config(stored_config, config)
         state = load_state(layout["state"])
-        if state.get("status") in {"promoted", "no_worthwhile_candidate", "failed", "budget_exhausted"}:
+        status = state.get("status")
+        if status in {"promoted", "no_worthwhile_candidate"}:
             # Already terminal — rewrite morning report and return receipt.
             if layout["receipt"].is_file():
                 receipt = read_json(layout["receipt"])
@@ -230,6 +231,31 @@ def run_optimize(
                 write_json_atomic(layout["receipt"], receipt)
             write_morning_report(layout["morning_report"], receipt=receipt)
             return receipt
+        if status in {"failed", "budget_exhausted"}:
+            # ``--resume`` is specifically the recovery path for an
+            # interrupted or repaired campaign.  Preserve every durable,
+            # successful stage but reopen the first incomplete stage instead
+            # of treating a previous failure receipt as permanently terminal.
+            # A new attempt will overwrite that stage's record and remove its
+            # current failure through ``mark_stage``.
+            failed = dict(state.get("failed_stages") or {})
+            state["failed_stages"] = {
+                stage: message
+                for stage, message in failed.items()
+                if stage_is_complete(state, stage)
+            }
+            state["status"] = "running"
+            state["terminal"] = None
+            state.setdefault("messages", []).append(
+                {
+                    "at": utc_now(),
+                    "text": f"resumed after terminal status {status}",
+                }
+            )
+            # These summarize the old terminal attempt and must not be
+            # mistaken for the outcome of the resumed one while it runs.
+            layout["receipt"].unlink(missing_ok=True)
+            layout["morning_report"].unlink(missing_ok=True)
     else:
         # A deliberately fresh run must not expose an old terminal receipt
         # while new stages are still running.
