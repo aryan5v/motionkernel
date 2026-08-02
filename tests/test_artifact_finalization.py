@@ -116,13 +116,21 @@ def _sections(artifact_id: str = "candidate-one") -> dict:
     }
 
 
-def _bundle(tmp_path: Path, artifact_id: str = "candidate-one") -> Path:
-    """Package one real quarantined bundle and return its directory."""
+def _bundle(
+    tmp_path: Path,
+    artifact_id: str = "candidate-one",
+    sections: dict | None = None,
+) -> Path:
+    """Package one real quarantined bundle and return its directory.
+
+    ``sections`` overrides the packaged manifest sections, so a test can build
+    a bundle of a different target kind without duplicating the fixture.
+    """
     payload = tmp_path / "payload" / artifact_id
     payload.mkdir(parents=True)
     (payload / "kernel.py").write_text(FAKE_KERNEL, encoding="utf-8")
     output = tmp_path / "artifacts" / artifact_id
-    package_artifact(payload, output, _sections(artifact_id))
+    package_artifact(payload, output, sections or _sections(artifact_id))
     return output
 
 

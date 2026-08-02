@@ -35,6 +35,7 @@ _TOP_LEVEL_FIELDS = {
     "runtime",
     "measurement",
     "parity",
+    "fidelity",
     "performance",
     "mode_env",
     "tags",
@@ -78,6 +79,14 @@ _PARITY_FIELDS = {
     "atol",
     "rtol",
     "allow_approximate_math",
+}
+_FIDELITY_FIELDS = {
+    "tier",
+    "min_ssim",
+    "max_lpips",
+    "min_vbench",
+    "frame_set",
+    "seed",
 }
 _PERFORMANCE_FIELDS = {
     "min_end_to_end_speedup",
@@ -569,6 +578,71 @@ class ParitySpec:
 
 
 @dataclass(frozen=True)
+class FidelitySpec:
+    """How much output drift this workload will trade for speed.
+
+    ``parity`` says how closely tensors must match; ``fidelity`` says which
+    axis they are contracted on at all. The two are separate because the
+    transforms this project is moving toward -- alternative attention backends,
+    cross-step caching -- cannot be bitwise exact and must not be admitted by
+    simply widening a numeric tolerance until they fit.
+
+    Validation lives in :class:`autokernel.verification.fidelity.FidelityBudget`
+    so the contract and its gate cannot drift apart; this class is the YAML
+    surface and re-raises as :class:`WorkloadError` for a consistent message.
+
+    An absent block means tier 1 (``exact``): a workload that never considered
+    the question gets the strictest contract, not the most convenient one.
+    """
+
+    tier: str = "exact"
+    min_ssim: float | None = None
+    max_lpips: float | None = None
+    min_vbench: float | None = None
+    frame_set: str = ""
+    seed: int | None = None
+
+    @classmethod
+    def from_dict(
+        cls, raw_value: Any, *, source: object, location: str
+    ) -> "FidelitySpec":
+        from ..verification.fidelity import FidelityBudget, FidelityError
+
+        if raw_value is None:
+            return cls()
+        raw = _mapping(raw_value, source, location)
+        _unknown_fields(raw, _FIDELITY_FIELDS, source, location)
+        try:
+            budget = FidelityBudget.from_dict(raw)
+        except FidelityError as error:
+            raise _fail(source, location, str(error)) from error
+        return cls(
+            tier=budget.tier,
+            min_ssim=budget.min_ssim,
+            max_lpips=budget.max_lpips,
+            min_vbench=budget.min_vbench,
+            frame_set=budget.frame_set,
+            seed=budget.seed,
+        )
+
+    def budget(self) -> "Any":
+        """Return the validated :class:`FidelityBudget` this spec describes."""
+        from ..verification.fidelity import FidelityBudget
+
+        return FidelityBudget(
+            tier=self.tier,
+            min_ssim=self.min_ssim,
+            max_lpips=self.max_lpips,
+            min_vbench=self.min_vbench,
+            frame_set=self.frame_set,
+            seed=self.seed,
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        return self.budget().as_manifest_dict()
+
+
+@dataclass(frozen=True)
 class PerformanceSpec:
     """Promotion thresholds for end-to-end model-level evaluation."""
 
@@ -669,6 +743,7 @@ class WorkloadManifest:
     runtime: RuntimeSpec | None = None
     measurement: MeasurementSpec | None = None
     parity: ParitySpec | None = None
+    fidelity: FidelitySpec | None = None
     performance: PerformanceSpec | None = None
     mode_env: ModeEnvSpec | None = None
     tags: tuple[str, ...] = ()
@@ -756,6 +831,9 @@ class WorkloadManifest:
             parity=ParitySpec.from_dict(
                 raw.get("parity"), source=source, location="parity"
             ),
+            fidelity=FidelitySpec.from_dict(
+                raw.get("fidelity"), source=source, location="fidelity"
+            ),
             performance=PerformanceSpec.from_dict(
                 raw.get("performance"),
                 source=source,
@@ -779,6 +857,7 @@ class WorkloadManifest:
             "runtime": (self.runtime or RuntimeSpec()).as_dict(),
             "measurement": (self.measurement or MeasurementSpec()).as_dict(),
             "parity": (self.parity or ParitySpec()).as_dict(),
+            "fidelity": (self.fidelity or FidelitySpec()).as_dict(),
             "performance": (self.performance or PerformanceSpec()).as_dict(),
         }
         if self.description is not None:
