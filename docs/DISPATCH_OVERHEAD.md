@@ -170,7 +170,17 @@ numbers must say so in the same terms.
 | arch | GPU | status |
 |---|---|---|
 | sm100 | GB200 (SLURM) | **measured** — this page, SLURM 1030 + 1040 |
-| sm90 | H100 (Modal) | not attempted |
+| sm90 | H100 (Modal) | isolated benchmark only; e2e parked |
+
+The sm90 leg so far (`modal/dispatch_overhead_h100.py`): the candidate
+kernel passes its isolated byte_equal benchmark on H100 (201.31 us vs
+203.07 us PyTorch), and an sm90 bundle was packaged from that evidence
+with the real packager, decision quarantined. Two findings already matter:
+**the kernel's saving does not transfer across architectures** (124 us/call
+on sm100, 1.8 us/call on sm90), and the full measurement OOMs on one H100
+(79 GiB) holding the checkpoint plus 48 graph pools — sm90 e2e needs an
+offload regime, which changes what is being measured and is deliberately
+parked rather than mixed into this page's sm100 numbers.
 
 ## Recomputing the number
 
