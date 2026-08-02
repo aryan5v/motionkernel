@@ -4,6 +4,11 @@ MotionKernel is the video-kernel optimization layer, not a competing
 video-generation runtime. It discovers and validates kernels that frameworks
 such as FastVideo and Diffusers can consume.
 
+**A milestone listed here is a plan, not a capability.** What is actually
+proven, validated, in progress, or merely targeted -- with the evidence behind
+each -- is in [docs/SUPPORT_STATUS.md](docs/SUPPORT_STATUS.md). Where the two
+disagree, the support-status page wins.
+
 Detailed execution instructions for the first two milestones are available in
 [docs/WEEK_1_2_AGENT_BRIEF.md](docs/WEEK_1_2_AGENT_BRIEF.md).
 
@@ -11,8 +16,9 @@ Detailed execution instructions for the first two milestones are available in
 
 - Preserve upstream provenance and MIT attribution.
 - Maintain separate `origin` and `upstream` remotes.
-- Establish the MotionKernel identity while retaining a compatible
-  `autokernel` import namespace.
+- Establish the MotionKernel identity while retaining `autokernel` as a
+  compatibility import namespace
+  ([migration plan](docs/NAMESPACE_MIGRATION.md)).
 - Establish safe contribution and experiment practices.
 - Add lightweight CPU-only validation for every change.
 
@@ -53,11 +59,16 @@ meaningful speedup on production shape distributions.
 
 ## Milestone 4: model adoption
 
-- Integrate and benchmark Wan through FastVideo.
-- Integrate and benchmark LTX-Video.
-- Integrate and benchmark Cosmos.
-- Integrate and benchmark Kandinsky.
-- Validate single-GPU and sequence-parallel execution.
+Status is tracked in [docs/SUPPORT_STATUS.md](docs/SUPPORT_STATUS.md).
+
+- Integrate and benchmark Wan through FastVideo — *isolated operator results
+  published; no end-to-end benchmark yet*.
+- Integrate and benchmark LTX-Video — *done for LTX2 on one workload and one
+  GPU architecture; see the V1 evidence report*.
+- Integrate and benchmark Cosmos — *in progress; no results published*.
+- Integrate and benchmark Kandinsky — *not started*.
+- Validate single-GPU and sequence-parallel execution — *single-GPU only so
+  far; sequence-parallel is untested*.
 
 Runtime integrations will use exported kernels with native PyTorch fallbacks;
 they will not require the optimization platform at inference time.
@@ -80,3 +91,12 @@ they will not require the optimization platform at inference time.
   into the optimizer core.
 - Add training, lower-precision, multi-GPU, and additional hardware backends
   only after the inference path is reliable.
+
+## Not on the roadmap yet
+
+Named here so their absence is deliberate rather than ambiguous:
+
+- artifact signing and a trusted-publisher model (see [SECURITY.md](SECURITY.md));
+- training-time kernels;
+- non-NVIDIA hardware validation (ROCm support is inherited and unverified here);
+- a public artifact registry.

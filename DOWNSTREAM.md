@@ -13,7 +13,20 @@ generation models.
 - Original copyright: Copyright (c) 2026 RightNow AI
 
 The upstream `LICENSE` file is preserved. Source files substantially derived
-from upstream remain covered by that notice.
+from upstream remain covered by that notice. No upstream copyright header has
+been removed from any file.
+
+[PROVENANCE.md](PROVENANCE.md) records the per-file split -- which files are
+byte-identical to upstream, which are modified descendants, and which are
+MotionKernel-original -- generated from Git history so it can be re-checked:
+
+```bash
+python scripts/provenance_inventory.py --check
+```
+
+As of this release, 45 files are unchanged from upstream, 9 are modified
+descendants, and 128 are MotionKernel-original; about 30% of the Python line
+count is inherited.
 
 ## MotionKernel direction
 
@@ -36,14 +49,33 @@ consume only promoted kernel implementations.
 The initial model families are Wan, LTX-Video, Cosmos, and Kandinsky. Listing a
 model as a target does not imply complete support: support is earned through a
 published integration, representative workload corpus, correctness results,
-and an end-to-end benchmark.
+and an end-to-end benchmark. The current level for each model, and the evidence
+behind it, is in [docs/SUPPORT_STATUS.md](docs/SUPPORT_STATUS.md).
 
-## Compatibility identity
+## Naming and the compatibility namespace
 
-The distribution is named `motionkernel`. The Python import namespace remains
-`autokernel` temporarily so existing specifications, scripts, and downstream
-users do not break during the project transition. A future namespace migration
-will include a compatibility release and explicit upgrade instructions.
+| | Name |
+|---|---|
+| Product | MotionKernel |
+| Distribution | `motionkernel` |
+| Canonical import namespace | `motionkernel` |
+| Compatibility import namespace | `autokernel` |
+
+`autokernel` is a **compatibility namespace** inherited from upstream. It is
+not the product name, not a second product, and not a sign that you are running
+AutoKernel. It aliases the same modules, so `motionkernel.specs is
+autokernel.specs`.
+
+It remains for a concrete reason rather than inertia: every generated `spec.py`
+MotionKernel has emitted contains `from autokernel.specgen import
+spec_from_manifest`, and artifact bundles are hash-verified. Renaming the
+import would invalidate the manifest of every artifact already produced,
+including promoted ones.
+
+New code should import `motionkernel`. `autokernel` is not deprecated in this
+release and emits no warning. See
+[docs/NAMESPACE_MIGRATION.md](docs/NAMESPACE_MIGRATION.md) for the four-phase
+plan and the gate on each phase.
 
 ## Upstream relationship
 
