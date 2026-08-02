@@ -100,18 +100,18 @@ def _artifact(argv: list[str]) -> int:
 
 
 def _workload(argv: list[str]) -> int:
-    parser = argparse.ArgumentParser(prog="motionkernel workload")
-    commands = parser.add_subparsers(dest="command", required=True)
-    commands.add_parser("list")
-    path_parser = commands.add_parser("path")
-    path_parser.add_argument("name", choices=("ltx_480p", "wan_t2v_1.3b_480p"))
-    args = parser.parse_args(argv)
-
     root = Path(__file__).resolve().parent / "workloads"
     paths = {
         "ltx_480p": root / "ltx_480p.yaml",
         "wan_t2v_1.3b_480p": root / "wan_t2v_1.3b_480p.yaml",
     }
+    parser = argparse.ArgumentParser(prog="motionkernel workload")
+    commands = parser.add_subparsers(dest="command", required=True)
+    commands.add_parser("list")
+    path_parser = commands.add_parser("path")
+    path_parser.add_argument("name", choices=tuple(paths))
+    args = parser.parse_args(argv)
+
     if args.command == "list":
         _emit({name: str(path) for name, path in paths.items()})
     else:

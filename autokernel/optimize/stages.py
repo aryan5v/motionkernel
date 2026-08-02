@@ -28,6 +28,7 @@ from .types import (
     STAGE_RESULT_SCHEMA_VERSION,
     OptimizeConfig,
     StageRecord,
+    default_repo_root,
 )
 
 
@@ -42,7 +43,7 @@ def default_stage_command(
     run_root: Path,
 ) -> list[str]:
     """Built-in driver invoked as an isolated subprocess."""
-    repo = config.repo_root or Path(__file__).resolve().parents[2]
+    repo = config.repo_root or default_repo_root()
     return [
         sys.executable,
         "-m",
@@ -66,7 +67,7 @@ def resolve_stage_command(
         replacements = {
             "{stage}": stage,
             "{run_dir}": str(run_root),
-            "{repo_root}": str(config.repo_root or Path(__file__).resolve().parents[2]),
+            "{repo_root}": str(config.repo_root or default_repo_root()),
             "{fastvideo_checkout}": str(config.fastvideo_checkout),
             "{workload}": str(config.workload),
             "{model}": config.model,
@@ -197,7 +198,7 @@ def run_stage(
         layout["root"] / config.artifact_dir_name
     )
     env["PYTHONPATH"] = (
-        str(config.repo_root or Path(__file__).resolve().parents[2])
+        str(config.repo_root or default_repo_root())
         + os.pathsep
         + env.get("PYTHONPATH", "")
     )

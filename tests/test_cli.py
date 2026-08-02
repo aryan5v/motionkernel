@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from autokernel import cli
+from autokernel.optimize.types import default_repo_root
 
 
 def test_top_level_help(capsys):
@@ -43,3 +44,8 @@ def test_optimize_dispatches_to_installed_command(monkeypatch):
     monkeypatch.setattr("autokernel.optimize.cli.main", lambda argv: seen.append(argv) or 17)
     assert cli.main(["optimize", "--help"]) == 17
     assert seen == [["--help"]]
+
+
+def test_default_runtime_root_contains_the_private_benchmark_entrypoint():
+    root = default_repo_root()
+    assert (root / "bench.py").is_file()

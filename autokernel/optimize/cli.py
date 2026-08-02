@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from . import OptimizeConfig, OptimizeError, run_optimize
+from .types import default_repo_root
 
 
 def _load_stage_commands(path: Path | None) -> dict[str, list[str]] | None:
@@ -137,7 +138,7 @@ def parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     """Run the optimize command and return a process exit status."""
     args = parser().parse_args(argv)
-    repo_root = args.repo_root or Path(__file__).resolve().parents[2]
+    repo_root = args.repo_root or default_repo_root()
     try:
         config = OptimizeConfig(
             fastvideo_checkout=args.fastvideo_checkout,

@@ -39,7 +39,7 @@ from pathlib import Path
 from typing import Any
 
 from .state import OptimizeError, read_json, utc_now, write_json_atomic
-from .types import PIPELINE_STAGES, OptimizeConfig
+from .types import PIPELINE_STAGES, OptimizeConfig, default_repo_root
 
 PREFLIGHT_SCHEMA_VERSION = 1
 RUN_CONTRACT_SCHEMA_VERSION = 1
@@ -623,7 +623,7 @@ def _check_executables(
     config: OptimizeConfig, report: PreflightReport
 ) -> dict[str, Any]:
     """Validate the interpreter and repository entry points the stages use."""
-    repo_root = config.repo_root or Path(__file__).resolve().parents[2]
+    repo_root = config.repo_root or default_repo_root()
     record: dict[str, Any] = {
         "python": Path(sys.executable).name if sys.executable else None,
         "python_version": ".".join(str(p) for p in sys.version_info[:3]),
@@ -836,7 +836,7 @@ def execute_preflight(
     search_agent = _check_search_agent(config, report)
     executables = _check_executables(config, report)
 
-    repo_root = config.repo_root or Path(__file__).resolve().parents[2]
+    repo_root = config.repo_root or default_repo_root()
     report.sections = {
         "model": config.model,
         "workload": workload,

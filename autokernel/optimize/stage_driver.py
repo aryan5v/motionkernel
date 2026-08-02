@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from .adapters import ProductionAdapterError, run_production_stage
-from .types import STAGE_RESULT_SCHEMA_VERSION
+from .types import STAGE_RESULT_SCHEMA_VERSION, default_repo_root
 
 
 def _write_result(run_dir: Path, stage: str, payload: dict[str, Any]) -> Path:
@@ -180,7 +180,7 @@ def main(argv: list[str] | None = None) -> int:
 
     run_dir = args.run_dir
     stage = args.stage
-    repo_root = args.repo_root or Path(__file__).resolve().parents[2]
+    repo_root = args.repo_root or default_repo_root()
 
     if os.environ.get("MOTIONKERNEL_SIMULATE") == "1":
         outcome = os.environ.get("MOTIONKERNEL_SIMULATE_OUTCOME", "promoted")

@@ -24,7 +24,7 @@ build-backend = "hatchling.build"
 packages = ["autokernel"]
 
 [tool.hatch.build.targets.wheel.force-include]
-"bench.py" = "bench.py"
+"bench.py" = "autokernel/_runtime/bench.py"
 
 [tool.hatch.build.targets.sdist]
 include = [
