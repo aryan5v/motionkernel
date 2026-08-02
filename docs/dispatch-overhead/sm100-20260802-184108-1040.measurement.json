@@ -1,0 +1,227 @@
+{
+  "schema": "motionkernel.dispatch-measurement",
+  "schema_version": 1,
+  "created_utc": "2026-08-02T18:51:42.232293+00:00",
+  "workload_id": "ltx-t2v-480p",
+  "model_id": "FastVideo/LTX2-Distilled-Diffusers",
+  "artifact_root": "/shared/ltx-v1-r4-targeted-fix-20260801-203751/transformer-artifacts",
+  "fastvideo_checkout": "/shared/ltx-v1-r4-targeted-fix-20260801-203751/fastvideo",
+  "environment": {
+    "python": "3.12.3",
+    "platform": "Linux-6.8.0-1055-nvidia-64k-aarch64-with-glibc2.39",
+    "executable": "/shared/fastvideo-wan-venv/bin/python",
+    "torch": "2.8.0a0+5228986c39.nv25.06",
+    "cuda_available": true,
+    "cuda": "12.9",
+    "gpu_name": "NVIDIA GB200",
+    "gpu_capability": "10.0",
+    "fastvideo": "0.2.0",
+    "mode_env": {},
+    "mode_requested": "candidate"
+  },
+  "arch": "sm100",
+  "gate": 1.01,
+  "generations_per_arm": 16,
+  "timed_runs_per_arm": 15,
+  "native": {
+    "runs": [
+      3.1169,
+      3.2589,
+      3.2786,
+      3.8851,
+      3.7723,
+      3.9301,
+      3.9119,
+      3.8633,
+      3.7004,
+      4.0098,
+      3.9266,
+      3.9589,
+      3.8743,
+      3.7428,
+      3.9167
+    ],
+    "count": 15,
+    "median": 3.8743,
+    "stdev": 0.2856,
+    "min": 3.1169,
+    "max": 4.0098
+  },
+  "candidate": {
+    "runs": [
+      3.0956,
+      3.1126,
+      3.1096,
+      3.091,
+      3.098,
+      3.0822,
+      3.0733,
+      3.144,
+      3.1154,
+      3.0541,
+      3.0359,
+      3.1214,
+      3.1427,
+      3.1431,
+      3.1225
+    ],
+    "count": 15,
+    "median": 3.1096,
+    "stdev": 0.032,
+    "min": 3.0359,
+    "max": 3.144
+  },
+  "parity": {
+    "policy": "byte_equal",
+    "native_shape": [
+      97,
+      480,
+      768,
+      3
+    ],
+    "optimized_shape": [
+      97,
+      480,
+      768,
+      3
+    ],
+    "native_dtype": "uint8",
+    "optimized_dtype": "uint8",
+    "same_shape": true,
+    "passed": true,
+    "reason": "frame arrays are byte equal"
+  },
+  "e2e": {
+    "speedup_median": 1.2459,
+    "speedup_min_to_min": 1.0267
+  },
+  "candidate_calls": 6143,
+  "runtime_fallbacks": 0,
+  "calls_per_generation": 383.94,
+  "shadow_attribution": {
+    "candidate_calls": 1151,
+    "native_forward_mean_ms": 8.0019,
+    "candidate_total_mean_ms": 27.5698,
+    "net_overhead_ms_per_call": 19.5679,
+    "replay_path": "mixed",
+    "replay_mean_ms": 18.481,
+    "graph_replay_calls": 1133,
+    "eager_execute_calls": 163,
+    "warmup_calls": 144,
+    "declined_captures": {
+      "runtime input 1 moved or changed layout after capture": 1
+    },
+    "plumbing_ms_per_candidate_call": 0.1609,
+    "shape_key_ms_per_candidate_call": 0.1646
+  },
+  "host_profile": {
+    "candidate_calls": 1151,
+    "candidate_total_host_ms_per_call": 24.6514,
+    "graph_replay_host_ms_per_call": 16.1464,
+    "graph_replay_calls": 1133,
+    "eager_execute_calls": 163,
+    "plumbing_host_ms_per_call": 0.116,
+    "shape_key_host_ms_per_call": 0.1424,
+    "warmup_calls": 144,
+    "declined_captures": {
+      "runtime input 1 moved or changed layout after capture": 1
+    }
+  },
+  "timing_report_path": "/shared/mk-track-d-dispatch-runs/sm100-20260802-184108-1040/profile-shadow/timing.json",
+  "dispatch_diagnostics_path": "/shared/mk-track-d-dispatch-runs/sm100-20260802-184108-1040/candidate/dispatch.json",
+  "e2e_overhead": {
+    "native_median_seconds": 3.8743,
+    "candidate_median_seconds": 3.1096,
+    "calls_per_generation": 384,
+    "kernel_saving_ms_per_call": 0.124,
+    "net_cost_ms_per_call": -1.9914,
+    "overhead_ms_per_call": -1.8674
+  },
+  "breakeven": [
+    {
+      "calls_per_generation": 1,
+      "required_saving_ms_per_call": 36.492,
+      "required_saving_us_per_call": 36492.0,
+      "overhead_ms_per_call": -1.8674,
+      "gate": 1.01
+    },
+    {
+      "calls_per_generation": 5,
+      "required_saving_ms_per_call": 5.8045,
+      "required_saving_us_per_call": 5804.47,
+      "overhead_ms_per_call": -1.8674,
+      "gate": 1.01
+    },
+    {
+      "calls_per_generation": 10,
+      "required_saving_ms_per_call": 1.9685,
+      "required_saving_us_per_call": 1968.53,
+      "overhead_ms_per_call": -1.8674,
+      "gate": 1.01
+    },
+    {
+      "calls_per_generation": 25,
+      "required_saving_ms_per_call": -0.333,
+      "required_saving_us_per_call": -333.03,
+      "overhead_ms_per_call": -1.8674,
+      "gate": 1.01
+    },
+    {
+      "calls_per_generation": 50,
+      "required_saving_ms_per_call": -1.1002,
+      "required_saving_us_per_call": -1100.22,
+      "overhead_ms_per_call": -1.8674,
+      "gate": 1.01
+    },
+    {
+      "calls_per_generation": 100,
+      "required_saving_ms_per_call": -1.4838,
+      "required_saving_us_per_call": -1483.81,
+      "overhead_ms_per_call": -1.8674,
+      "gate": 1.01
+    },
+    {
+      "calls_per_generation": 200,
+      "required_saving_ms_per_call": -1.6756,
+      "required_saving_us_per_call": -1675.61,
+      "overhead_ms_per_call": -1.8674,
+      "gate": 1.01
+    },
+    {
+      "calls_per_generation": 384,
+      "required_saving_ms_per_call": -1.7675,
+      "required_saving_us_per_call": -1767.51,
+      "overhead_ms_per_call": -1.8674,
+      "gate": 1.01
+    },
+    {
+      "calls_per_generation": 500,
+      "required_saving_ms_per_call": -1.7907,
+      "required_saving_us_per_call": -1790.69,
+      "overhead_ms_per_call": -1.8674,
+      "gate": 1.01
+    },
+    {
+      "calls_per_generation": 1000,
+      "required_saving_ms_per_call": -1.829,
+      "required_saving_us_per_call": -1829.05,
+      "overhead_ms_per_call": -1.8674,
+      "gate": 1.01
+    },
+    {
+      "calls_per_generation": 2000,
+      "required_saving_ms_per_call": -1.8482,
+      "required_saving_us_per_call": -1848.23,
+      "overhead_ms_per_call": -1.8674,
+      "gate": 1.01
+    },
+    {
+      "calls_per_generation": 5000,
+      "required_saving_ms_per_call": -1.8597,
+      "required_saving_us_per_call": -1859.73,
+      "overhead_ms_per_call": -1.8674,
+      "gate": 1.01
+    }
+  ],
+  "status": "ok"
+}
