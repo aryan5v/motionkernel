@@ -95,3 +95,67 @@ Baseline reproducibility across independent jobs, hours apart:
   attention takes a larger share and sequences are longer. These results do not
   generalize beyond the row they were measured on -- which is the argument for
   the support matrix in Track E.
+
+## Step 3 — VSA on FastWan: blocked, and the block is informative
+
+Round 1 rejected VSA at 0.5169x on vanilla Wan. That was the wrong host: VSA's
+published results come from FastWan checkpoints, so the rejection said less
+about VSA than the number suggested. Step 3 was to re-run it where it belongs.
+
+**It cannot be run as an A/B.** SLURM 1070, exclusive node, failed during model
+loading in both arms:
+
+```
+ValueError: Parameter blocks.0.to_gate_compress.bias not found in custom
+model state dict. The hf to custom mapping may be incorrect.
+```
+
+`to_gate_compress` is a VSA-specific parameter. The FastWan checkpoint
+(`FastVideo/FastWan2.1-T2V-1.3B-Diffusers`) is VSA-**finetuned**: it carries
+weights that only the VSA attention path consumes, and the base Wan DiT has
+nowhere to put them.
+
+### What this means, and a correction
+
+Before launching, this workload was created on the reading that FastWan does
+not require VSA -- `FastWan2_1_T2V_480P_Config` inherits `WanT2V480PConfig` and
+overrides only `flow_shift` and `dmd_denoising_steps`, and the base DiT lists
+both `FLASH_ATTN` and `VIDEO_SPARSE_ATTN` as supported. That reading was
+**wrong**. The constraint is not in the pipeline config, it is in the
+checkpoint: supported-backend lists describe what the *architecture* can
+dispatch, not what a given set of *weights* can be loaded into.
+
+The consequence for the experiment is structural rather than fixable by
+configuration:
+
+> **FastWan + VSA cannot be A/B'd against FastWan + FlashAttention**, because
+> the FlashAttention arm cannot load the checkpoint. Any comparison is
+> FastWan-with-VSA against a *different model* (vanilla Wan with
+> FlashAttention), which measures the checkpoint and the backend together and
+> attributes the whole difference to the backend.
+
+That is a category of comparison this project already refuses elsewhere: it is
+the same shape as crediting a run to a backend that did not execute.
+
+### Status of the VSA verdict
+
+- **On vanilla Wan (`wan-t2v-1.3b-480p-attention-vsa`): rejected**, 0.5169x,
+  SSIM 0.9527. Measured, both arms verified, stands.
+- **On FastWan: not measured.** Not a rejection -- a workload we cannot
+  construct a controlled experiment on with the current loader.
+
+Publishing "VSA rejected" without this distinction would overstate the result.
+VSA in its intended regime remains untested here, and the reason is recorded
+rather than left as an absence.
+
+### What would unblock it
+
+1. A FastWan DiT config that maps the VSA parameters, so the checkpoint loads
+   under a FlashAttention arm with those weights inert -- if that is even
+   semantically meaningful, which is not obvious.
+2. Or accept a cross-model comparison and *state* that it is one, reporting
+   FastWan+VSA against vanilla-Wan+FlashAttention as a
+   deployment-configuration result rather than a backend result.
+
+Option 2 is a legitimate thing to measure. It is not what the 1.3x attention
+gate is about, so it belongs in a different table.
