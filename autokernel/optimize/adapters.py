@@ -29,6 +29,11 @@ from autokernel.discovery import (
     write_discovery_report,
 )
 from autokernel.specgen import SpecGenerationError, write_generated_artifacts
+from autokernel.verification.fidelity import (
+    FidelityBudget,
+    FidelityError,
+    PerceptualEvidence,
+)
 from autokernel.workload import ParitySpec, WorkloadError, load_workload
 from autokernel.workload.launcher import run_ab, run_mode
 from autokernel.workload.result import (
@@ -68,6 +73,33 @@ def _stage_input(run_dir: Path, stage: str) -> dict[str, Any]:
     if not isinstance(config, dict):
         raise ProductionAdapterError(f"stage input for {stage!r} has no config object")
     return payload
+
+
+def _perceptual_evidence(validated: Mapping[str, Any]) -> PerceptualEvidence | None:
+    """Read the tier-2 perceptual measurement out of a validation result.
+
+    Returns None when the stage recorded none. That is not treated as a pass:
+    :func:`~autokernel.verification.fidelity.evaluate_fidelity` holds any
+    artifact whose budget gates on perception but whose evidence is missing.
+    A malformed block is also None rather than an exception -- a broken
+    measurement must hold the artifact, not crash the campaign after the GPU
+    time is already spent.
+    """
+    raw = validated.get("perceptual")
+    if not isinstance(raw, Mapping):
+        return None
+    try:
+        return PerceptualEvidence(
+            frame_set=str(raw.get("frame_set", "")),
+            seed=raw.get("seed"),
+            frames_compared=raw.get("frames_compared"),
+            ssim=raw.get("ssim"),
+            lpips=raw.get("lpips"),
+            vbench=raw.get("vbench"),
+            stage_status=str(raw.get("stage_status", "ok")),
+        )
+    except (FidelityError, TypeError):
+        return None
 
 
 def _prior_result(run_dir: Path, stage: str) -> dict[str, Any]:
@@ -617,9 +649,17 @@ def _finalize(run_dir: Path, config: Mapping[str, Any]) -> dict[str, Any]:
 
     workload = load_workload(_config_path(config, "workload"))
     speedup = metrics.get("end_to_end_speedup")
+    # The workload's declared fidelity budget, and the perceptual measurement
+    # the validation stage recorded for it. Above tier 1 these replace
+    # ``parity_passed`` as the output contract; at tier 1 (the default for a
+    # workload that declares nothing) they change nothing at all.
+    fidelity_budget = FidelityBudget.from_workload(workload)
+    perceptual_evidence = _perceptual_evidence(validated)
     outcome = GenerationOutcome(
         workload_id=workload.workload_id,
         steps=workload.sampling.num_inference_steps,
+        fidelity=fidelity_budget,
+        perceptual=perceptual_evidence,
         parity_passed=metrics.get("parity_passed") is True,
         artifact_selected=(
             bool(selected_ids) and metrics.get("artifact_selected") is True

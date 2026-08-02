@@ -103,6 +103,7 @@ _GENERATION_FIELDS = {
     "passed",
     "baseline_ref",
     "candidate_ref",
+    "fidelity",
 }
 _PROMOTION_FIELDS = {"decision", "reason", "decided_at", "campaign"}
 _CAMPAIGN_FIELDS = {"campaign_id", "source", "target_name"}
@@ -943,6 +944,12 @@ class GenerationEvidence:
     passed: bool
     baseline_ref: str = ""
     candidate_ref: str = ""
+    #: Tiered-fidelity record, present only above tier 1. Carries the declared
+    #: budget, the verdict, and the signed margin for every gated metric, so a
+    #: perceptual promotion can be audited from the manifest alone. Validated
+    #: as a shape here; the authoritative rules live in
+    #: :mod:`autokernel.verification.fidelity`, which owns the contract.
+    fidelity: Mapping[str, Any] | None = None
 
     @classmethod
     def from_dict(
@@ -954,6 +961,18 @@ class GenerationEvidence:
     ) -> "GenerationEvidence":
         raw = _mapping(raw_value, source, location, non_empty=True)
         _unknown_fields(raw, _GENERATION_FIELDS, source, location)
+        fidelity = raw.get("fidelity")
+        if fidelity is not None:
+            fidelity = dict(
+                _mapping(fidelity, source, f"{location}.fidelity", non_empty=True)
+            )
+            for required in ("budget", "verdict"):
+                if required not in fidelity:
+                    raise _fail(
+                        source,
+                        f"{location}.fidelity",
+                        f"must contain {required!r}",
+                    )
         refs = {}
         for key in ("baseline_ref", "candidate_ref"):
             value = raw.get(key, "")
@@ -971,11 +990,12 @@ class GenerationEvidence:
                 raw.get("threshold"), source, f"{location}.threshold"
             ),
             passed=_bool(raw.get("passed"), source, f"{location}.passed"),
+            fidelity=fidelity,
             **refs,
         )
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        payload: dict[str, Any] = {
             "workload_id": self.workload_id,
             "steps": self.steps,
             "metric": self.metric,
@@ -985,6 +1005,9 @@ class GenerationEvidence:
             "baseline_ref": self.baseline_ref,
             "candidate_ref": self.candidate_ref,
         }
+        if self.fidelity is not None:
+            payload["fidelity"] = dict(self.fidelity)
+        return payload
 
 
 @dataclass(frozen=True)
