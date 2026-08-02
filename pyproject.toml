@@ -1,9 +1,36 @@
 [project]
 name = "motionkernel"
-version = "0.1.0"
+# Single source of truth is autokernel.__version__; tests/test_public_metadata.py
+# fails if the two drift. The import namespace is a compatibility namespace, not
+# the product name -- see docs/NAMESPACE_MIGRATION.md.
+version = "1.0.0"
 description = "Verified GPU kernel optimization for video generation models"
 readme = "README.md"
 requires-python = ">=3.10"
+license = { file = "LICENSE" }
+keywords = [
+    "gpu",
+    "triton",
+    "cuda",
+    "kernel-optimization",
+    "video-generation",
+    "diffusion",
+    "pytorch",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: GPU :: NVIDIA CUDA",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Compilers",
+]
 dependencies = [
     "matplotlib>=3.10.0",
     "numpy>=2.2.0",
@@ -13,6 +40,13 @@ dependencies = [
     "triton>=3.3.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/aryan5v/motionkernel"
+Repository = "https://github.com/aryan5v/motionkernel"
+Changelog = "https://github.com/aryan5v/motionkernel/blob/main/CHANGELOG.md"
+Provenance = "https://github.com/aryan5v/motionkernel/blob/main/PROVENANCE.md"
+Roadmap = "https://github.com/aryan5v/motionkernel/blob/main/ROADMAP.md"
+
 [project.scripts]
 motionkernel = "autokernel.cli:main"
 
@@ -21,7 +55,9 @@ requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["autokernel"]
+# Both namespaces ship: "autokernel" is the compatibility namespace every
+# generated spec.py imports, "motionkernel" is the canonical alias for new code.
+packages = ["autokernel", "motionkernel"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "bench.py" = "autokernel/_runtime/bench.py"
@@ -29,12 +65,14 @@ packages = ["autokernel"]
 [tool.hatch.build.targets.sdist]
 include = [
     "/autokernel",
+    "/motionkernel",
     "/docs",
     "/tests",
     "/workloads",
     "/README.md",
     "/LICENSE",
     "/CHANGELOG.md",
+    "/PROVENANCE.md",
     "/bench.py",
     "/optimize.py",
 ]
@@ -63,9 +101,12 @@ hf-kernels = [
     "kernels>=0.4.0",
     "huggingface-hub>=0.20.0",
 ]
-# Development: CPU test suite
+# Development: CPU test suite and linting
 dev = [
     "pytest>=8.0.0",
+    "ruff>=0.9.0",
+    # tomllib is 3.11+; the metadata guards read pyproject.toml on 3.10 too.
+    "tomli>=2.0.0; python_version < '3.11'",
 ]
 
 [tool.pytest.ini_options]
@@ -83,3 +124,29 @@ torch = [
 name = "pytorch-cu128"
 url = "https://download.pytorch.org/whl/cu128"
 explicit = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+# Root harness files and starter kernels are inherited from upstream; see
+# PROVENANCE.md. They are excluded so lint noise from unmodified upstream code
+# does not obscure findings in MotionKernel-original sources.
+extend-exclude = [
+    "kernels",
+    "kernelbench",
+    "models",
+    "workspace",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = [
+    "E501",  # line length is enforced by the formatter, not the linter
+    "B008",  # function call in default argument, used deliberately in specs
+]
+
+[tool.ruff.lint.per-file-ignores]
+# B011: asserting False is how a few guards signal an unreachable branch.
+# B018: a bare attribute access is exactly what a __getattr__ guard must test;
+#       rewriting it as getattr() only trades B018 for B009.
+"tests/*" = ["B011", "B018"]

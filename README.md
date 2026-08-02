@@ -30,7 +30,10 @@ artifact passed strict independent correctness and hash verification, executed
 6,143 times with zero fallbacks, preserved byte-identical generated frames, and
 improved median end-to-end latency from 3.3646s to 3.0991s (1.0857x) across a
 15-run A/B on an NVIDIA GB200. An independent 15-run replication measured
-1.2514x. See [the V1 evidence report](docs/LTX_V1_R4_ROOT_CAUSE.md).
+1.2514x. See [the V1 evidence report](docs/LTX_V1_R4_ROOT_CAUSE.md) for the
+measurements and [docs/SUPPORT_STATUS.md](docs/SUPPORT_STATUS.md) for exactly
+what that proof does and does not cover -- it is one artifact, one workload,
+one GPU architecture, and one model.
 
 The first video-specific pack covers three Wan boundaries: modulated
 pre-attention LayerNorm, post-attention gated residual plus LayerNorm, and the
@@ -46,9 +49,22 @@ generation, autonomous GPU search, strict independent validation, versioned
 artifact packaging, generic FastVideo dispatch, full-generation A/B validation,
 and fail-closed promotion.
 
-MotionKernel currently retains the `autokernel` Python import namespace for
-compatibility with the upstream project. The import namespace will only move
-after a documented migration path exists.
+### Naming
+
+The product is **MotionKernel** and the distribution is `motionkernel`. The
+canonical import namespace is `motionkernel`:
+
+```python
+from motionkernel.specs import KernelSpec
+```
+
+`autokernel` is a **compatibility namespace** inherited from upstream, not the
+product name and not a second product. It is an alias of the same modules
+(`motionkernel.specs is autokernel.specs`), it still works, and it is not
+deprecated. It remains because every generated `spec.py` imports it and
+artifact bundles are hash-verified, so renaming it would invalidate artifacts
+that already exist. See
+[docs/NAMESPACE_MIGRATION.md](docs/NAMESPACE_MIGRATION.md) for the staged plan.
 
 ## How It Works
 
@@ -64,7 +80,9 @@ will:
 
 The agent reads `program.md` -- the "research org code" -- which contains comprehensive instructions for autonomous operation. It edits `kernel.py` one kernel at a time, runs `bench.py` (fixed benchmark with 5-stage correctness checks + roofline analysis), and either keeps or reverts the change. The orchestrator decides when to move to the next kernel using Amdahl's law.
 
-Each experiment takes ~90 seconds. That's ~40 experiments/hour, ~320 overnight, across all kernels.
+Experiment wall time depends on the kernel, the shape corpus and the GPU;
+`bench.py` records its own elapsed time in every result so a campaign's real
+throughput can be read from its run directory rather than estimated.
 
 ## FastVideo Technical Preview
 
@@ -166,9 +184,12 @@ Any PyTorch  ──>  Rank kernels  ──>  Generate baseline  ──>  Optimiz
 | `bench.py` | Fixed benchmark: 5-stage correctness (smoke, shape sweep, numerical stability, determinism, edge cases) + performance + roofline |
 | `verify.py` | Plugs optimized kernels back into the model, checks end-to-end correctness, reports total speedup |
 
-## Supported Kernels
+## Built-in Kernel Specifications
 
-9 kernel types covering the core operations of modern deep learning:
+Nine operations inherited from upstream, kept for the standalone single-kernel
+workflow. They are starter implementations and reference specifications, not
+validated production kernels -- see
+[docs/SUPPORT_STATUS.md](docs/SUPPORT_STATUS.md) for what is actually claimed.
 
 | Kernel | Description | Key Metric |
 |--------|-------------|------------|
@@ -543,6 +564,20 @@ cd workspace/hf_export/my_matmul
 kernels upload . --repo_id your-username/my_matmul
 ```
 
+## Documentation
+
+| Document | What it covers |
+|---|---|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Pipeline stages, package layout, the trust boundary, artifact format, runtime dispatch |
+| [docs/SUPPORT_STATUS.md](docs/SUPPORT_STATUS.md) | What is proven, validated, in progress, or targeted -- with evidence |
+| [docs/REPRODUCIBILITY.md](docs/REPRODUCIBILITY.md) | What is recorded, what reproduces exactly, and the bar for a performance claim |
+| [docs/NAMESPACE_MIGRATION.md](docs/NAMESPACE_MIGRATION.md) | Why the import namespace is `autokernel` and how it moves |
+| [docs/ARTIFACT_BUNDLE.md](docs/ARTIFACT_BUNDLE.md) | Artifact manifest schema and verification rules |
+| [PROVENANCE.md](PROVENANCE.md) | Per-file inventory of what was inherited from upstream |
+| [SECURITY.md](SECURITY.md) | Threat model, reporting, and what artifact verification does and does not prove |
+| [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md) | Gate list for cutting a release |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Validation levels, provenance rules, claim rules |
+
 ## Project Structure
 
 ```
@@ -554,6 +589,8 @@ motionkernel/
   optimize.py           resumable overnight optimization control plane
   reference.py          PyTorch reference implementations (ground truth)
   prepare.py            one-time setup: test data, baselines
+
+  motionkernel/         canonical import namespace (aliases autokernel)
 
   autokernel/specs/     KernelSpec types, registry, external spec loader,
                         built-in operation metadata, input generators
@@ -632,27 +669,10 @@ built by [RightNow AI](https://www.rightnowai.co); see
 
 ## Changelog
 
-### v1.3.0
-- AMD ROCm GPU support: MI300X, MI325X, MI350X, MI355X detection and specs (thanks [@andyluo7](https://github.com/andyluo7))
-- Fixed `verify.py` SyntaxError on Python 3.13+
-- Fixed CUDA flash_attention ignoring `sm_scale` parameter
-- Fixed CUDA cross_entropy returning wrong dtype
-- Fixed Triton rotary_embedding broadcasting truncation
-- Fixed Triton reduce output shape for non-last-dim reductions
-
-### v1.2.0
-- Enhanced profiler: `--export-trace`, `--memory-snapshot`, `--torch-compile-log` flags
-- HuggingFace Kernels export via `export_hf.py`
-
-### v1.1.0
-- Native CUDA C++ backend with 9 starter kernels (tensor cores, warp intrinsics, shared memory tiling)
-- KernelBench integration (250+ standardized GPU kernel problems)
-- `--backend triton|cuda` flag for `extract.py`
-
-### v1.0.0
-- Initial release: Triton kernel optimization pipeline with 5-stage correctness harness
-
-See [CHANGELOG.md](CHANGELOG.md) for full details.
+MotionKernel's own release history, and the upstream AutoKernel history it
+descends from, are both in [CHANGELOG.md](CHANGELOG.md). Downstream sections
+come first; upstream `v1.x` entries are preserved below them as provenance and
+are not MotionKernel releases.
 
 ## License
 
