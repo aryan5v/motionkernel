@@ -418,3 +418,51 @@ def breakeven_curve(
             )
         )
     return tuple(points)
+
+
+def host_profile_summary(report: TimingReport) -> dict[str, Any]:
+    """Host-side per-call cost of the dispatched path from an unsynced profile.
+
+    A plain ``FASTVIDEO_OPTIMIZATION_ARTIFACT_TIMING=1`` run never
+    synchronizes, so phase wall times are host-side cost only -- launch,
+    flatten/validate/unflatten, shape keys, input copies, output clones --
+    which is what remains of the dispatch tax after graph capture. Unlike
+    :func:`attribute_overhead` this needs no shadow native forward, because
+    the native arm runs no dispatch code at all; the e2e A/B carries the
+    native comparison.
+    """
+    if report.synchronized:
+        raise DispatchAnalysisError(
+            f"dispatch timing {report.source!r}: report is synchronized; "
+            "the host profile expects FASTVIDEO_OPTIMIZATION_ARTIFACT_TIMING=1"
+        )
+    candidate = report.phase(PHASE_CANDIDATE_TOTAL)
+    if candidate is None or candidate.calls == 0:
+        raise DispatchAnalysisError(
+            f"dispatch timing {report.source!r}: {PHASE_CANDIDATE_TOTAL} has no "
+            "calls; the artifact path never engaged"
+        )
+    calls = candidate.calls
+    graph = report.phase(PHASE_GRAPH_REPLAY)
+    eager = report.phase(PHASE_EAGER_EXECUTE)
+    plumbing_total_s = sum(
+        report.phase(name).total_seconds
+        for name in PLUMBING_PHASES
+        if report.phase(name) is not None
+    )
+    shape_key = report.phase(PHASE_SHAPE_KEY)
+    return {
+        "candidate_calls": calls,
+        "candidate_total_host_ms_per_call": round(candidate.mean_ms, 4),
+        "graph_replay_host_ms_per_call": (
+            round(graph.total_seconds * 1000.0 / calls, 4) if graph is not None else 0.0
+        ),
+        "graph_replay_calls": graph.calls if graph is not None else 0,
+        "eager_execute_calls": eager.calls if eager is not None else 0,
+        "plumbing_host_ms_per_call": round(plumbing_total_s * 1000.0 / calls, 4),
+        "shape_key_host_ms_per_call": (
+            round(shape_key.total_seconds * 1000.0 / calls, 4) if shape_key is not None else 0.0
+        ),
+        "warmup_calls": report.note_count(NOTE_WARMUP),
+        "declined_captures": dict(report.declined_captures()),
+    }

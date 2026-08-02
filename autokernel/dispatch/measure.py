@@ -40,6 +40,7 @@ from .overhead import (
     TimingReport,
     attribute_overhead,
     breakeven_curve,
+    host_profile_summary,
     overhead_from_e2e,
 )
 
@@ -54,6 +55,15 @@ MIN_TIMED_RUNS = 15
 #: dispatched call), so it runs as a short separate generation, not the 15-run
 #: arm. 3 generations still give >1000 attributed calls on a 384-call stack.
 PROFILE_RUNS = 2
+
+#: The shadow profile synchronizes around every phase, which serializes host
+#: and device time. That was exactly right for attributing the eager FX
+#: replay's host-side tax (R4 section 7), but it inflates the CUDA-graph
+#: path: a replay is one ~10us host launch plus device time the sync then
+#: waits for. The host profile (plain FASTVIDEO_OPTIMIZATION_ARTIFACT_TIMING=1)
+#: leaves the stream alone and measures host-side cost only -- the residual
+#: dispatch tax after graph capture.
+HOST_PROFILE_RUNS = 2
 
 
 class MeasurementError(RuntimeError):
@@ -106,7 +116,7 @@ def _artifact_env(
     artifact_root: Path,
     model_id: str,
     diagnostics_path: Path,
-    shadow: bool,
+    timing: str | None,
 ) -> dict[str, str]:
     mode_env: dict[str, str] = {}
     if manifest.mode_env is not None:
@@ -118,8 +128,8 @@ def _artifact_env(
         "FASTVIDEO_OPTIMIZATION_ARTIFACT_VALIDATION": "1",
         "FASTVIDEO_OPTIMIZATION_ARTIFACT_DIAGNOSTICS": str(diagnostics_path),
     }
-    if shadow:
-        env["FASTVIDEO_OPTIMIZATION_ARTIFACT_TIMING"] = "shadow"
+    if timing is not None:
+        env["FASTVIDEO_OPTIMIZATION_ARTIFACT_TIMING"] = timing
     return env
 
 
@@ -217,7 +227,7 @@ def run_dispatch_measurement(
         artifact_root=artifacts,
         model_id=model_id,
         diagnostics_path=candidate_dir / "dispatch.json",
-        shadow=False,
+        timing=None,
     )
     if env_extra:
         candidate_env.update(env_extra)
@@ -236,7 +246,7 @@ def run_dispatch_measurement(
         artifact_root=artifacts,
         model_id=model_id,
         diagnostics_path=profile_dir / "dispatch.json",
-        shadow=True,
+        timing="shadow",
     )
     if env_extra:
         shadow_env.update(env_extra)
@@ -247,6 +257,26 @@ def run_dispatch_measurement(
         output_dir=profile_dir,
         model_override=model_override,
         env=shadow_env,
+        python=python,
+        timeout=timeout,
+    )
+    host_dir = output / "profile-host"
+    host_env = _artifact_env(
+        manifest,
+        artifact_root=artifacts,
+        model_id=model_id,
+        diagnostics_path=host_dir / "dispatch.json",
+        timing="1",
+    )
+    if env_extra:
+        host_env.update(env_extra)
+    run_mode(
+        fastvideo_checkout=fastvideo,
+        workload=profile_workload,
+        mode="candidate",
+        output_dir=host_dir,
+        model_override=model_override,
+        env=host_env,
         python=python,
         timeout=timeout,
     )
@@ -286,6 +316,11 @@ def run_dispatch_measurement(
         source=str(profile_dir / "timing.json"),
     )
     attribution = attribute_overhead(timing_report)
+    host_report = TimingReport.from_dict(
+        json.loads((host_dir / "timing.json").read_text(encoding="utf-8")),
+        source=str(host_dir / "timing.json"),
+    )
+    host_profile = host_profile_summary(host_report)
 
     e2e_overhead = None
     curve = None
@@ -331,6 +366,7 @@ def run_dispatch_measurement(
         "runtime_fallbacks": runtime_fallbacks,
         "calls_per_generation": round(calls_per_generation, 2),
         "shadow_attribution": attribution.as_dict(),
+        "host_profile": host_profile,
         "timing_report_path": str(profile_dir / "timing.json"),
         "dispatch_diagnostics_path": str(candidate_dir / "dispatch.json"),
     }

@@ -170,8 +170,16 @@ def _cmd_summarize(args: argparse.Namespace) -> int:
         f"shadow: native {attribution['native_forward_mean_ms']:.4f} ms vs candidate "
         f"{attribution['candidate_total_mean_ms']:.4f} ms -> net "
         f"{attribution['net_overhead_ms_per_call']:+.4f} ms/call "
-        f"({attribution['replay_path']})"
+        f"({attribution['replay_path']}, sync-serialized)"
     )
+    host = record.get("host_profile")
+    if host:
+        print(
+            f"host: candidate path {host['candidate_total_host_ms_per_call']:.4f} ms/call "
+            f"host-side (plumbing {host['plumbing_host_ms_per_call']:.4f}, "
+            f"shape key {host['shape_key_host_ms_per_call']:.4f}, "
+            f"graph replay launch {host['graph_replay_host_ms_per_call']:.4f})"
+        )
     if "e2e_overhead" in record:
         overhead = record["e2e_overhead"]
         print(

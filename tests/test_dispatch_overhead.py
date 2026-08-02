@@ -263,3 +263,37 @@ class BreakEvenTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HostProfileSummaryTest(unittest.TestCase):
+    def test_host_only_profile(self) -> None:
+        from autokernel.dispatch import host_profile_summary
+
+        payload = {
+            "timing_schema_version": 1,
+            "synchronized": False,
+            "phases": {
+                "dispatch.candidate_total": {"calls": 5952, "mean_ms": 0.31, "total_seconds": 1.84512},
+                "dispatch.shape_key": {"calls": 5952, "mean_ms": 0.11, "total_seconds": 0.65472},
+                "subgraph.execute_cuda_graph": {"calls": 5952, "mean_ms": 0.02, "total_seconds": 0.11904},
+                "subgraph.flatten": {"calls": 5952, "mean_ms": 0.07, "total_seconds": 0.41664},
+                "subgraph.unflatten": {"calls": 5952, "mean_ms": 0.05, "total_seconds": 0.2976},
+                "subgraph.validate": {"calls": 5952, "mean_ms": 0.05, "total_seconds": 0.2976},
+            },
+            "notes": {"cuda_graph_warmup": 144},
+        }
+        summary = host_profile_summary(TimingReport.from_dict(payload))
+        self.assertAlmostEqual(summary["candidate_total_host_ms_per_call"], 0.31, places=4)
+        self.assertAlmostEqual(summary["graph_replay_host_ms_per_call"], 0.02, places=4)
+        self.assertAlmostEqual(
+            summary["plumbing_host_ms_per_call"],
+            (0.41664 + 0.2976 + 0.2976) * 1000.0 / 5952,
+            places=4,
+        )
+        self.assertEqual(summary["warmup_calls"], 144)
+
+    def test_rejects_synchronized_report(self) -> None:
+        from autokernel.dispatch import host_profile_summary
+
+        with self.assertRaises(DispatchAnalysisError):
+            host_profile_summary(TimingReport.from_dict(R4_EAGER_PROFILE))
