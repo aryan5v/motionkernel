@@ -40,6 +40,39 @@ production shape corpora on an NVIDIA GB200 (see
 operator results; complete model packs still require end-to-end benchmark
 publication before support is claimed.
 
+Optimizations that cannot be bitwise exact are now first-class.
+[Tiered fidelity contracts](docs/TIERED_FIDELITY.md) let a workload declare
+which axis its outputs are contracted on -- tier 1 `exact` (bitwise), tier 2
+`perceptual` (SSIM/LPIPS against a fixed-seed frame set, thresholds declared
+per workload), or tier 3 `advisory` (measured, never auto-promoted). A workload
+that declares nothing gets tier 1. This is what makes attention backends and
+cross-step caching evaluable at all, without widening the numeric tolerances
+that keep ordinary kernels honest.
+
+**Attention backend selection is a promotable artifact kind, and our first two
+candidates were rejected.** On `wan-t2v-1.3b-480p` at 480x832/49 frames/20
+steps on sm100, measured over 15 timed runs per arm:
+
+| candidate | end-to-end | worst-frame SSIM (floor 0.97) | verdict |
+|---|---|---|---|
+| SageAttention v1 (`SAGE_ATTN`) | **0.8031x** | 0.9353 | **rejected** |
+| Video Sparse Attention (`VIDEO_SPARSE_ATTN`) | **0.5169x** | 0.9527 | **rejected** |
+
+Both are *slower* than FlashAttention on this workload -- one by nearly half --
+and both fall outside the structural-similarity budget. Full numbers, including
+why these are properties of the approach on this hardware rather than tuning
+failures, are in
+[docs/ATTENTION_CAMPAIGN_RESULTS.md](docs/ATTENTION_CAMPAIGN_RESULTS.md).
+
+These results are published for the same reason the promoted ones are: an
+optimization platform that only reports its wins is not measuring anything.
+Note also that FastVideo silently substitutes FlashAttention when an optional
+backend cannot be imported, and all three optional backends were absent from
+our cluster's base image -- so an unguarded campaign would have measured
+FlashAttention twice and reported ~1.00x for a backend that never ran. Every
+attention artifact records the backend that actually executed, and promotion is
+refused when it differs from the one claimed.
+
 The model-independent pipeline includes declarative FastVideo workloads,
 resumable profiling, export graph capture, impact ranking, graph-derived spec
 generation, autonomous GPU search, strict independent validation, versioned
