@@ -69,6 +69,39 @@ Implementation: `motionkernel/__init__.py` installs a `MetaPathFinder` that
 resolves `motionkernel.<x>` to the already-imported `autokernel.<x>`. It
 declines cleanly for names it does not own, so unrelated imports are unaffected.
 
+### Known limitations of the alias
+
+These are measured, not theoretical, and they are why `autokernel` remains the
+namespace this project points production users at for now.
+
+**Static analysis cannot see it.** Type checkers resolve modules from the
+filesystem; a runtime `MetaPathFinder` is invisible to them. Against a clean
+install of the wheel:
+
+| import | mypy result | `reveal_type` |
+|---|---|---|
+| `from autokernel.specs import Tolerance` | resolves | `autokernel.specs.types.Tolerance` |
+| `from motionkernel.specs import Tolerance` | `Cannot find implementation or library stub` | `Any` |
+
+Both packages ship `py.typed`, which is what makes the first row work. The
+second row cannot be fixed without real files on disk. Anyone who type-checks
+their code, or relies on IDE completion, is better served by `autokernel` until
+phase 2.
+
+**Submodule discovery returns nothing.** `pkgutil.iter_modules` over
+`motionkernel.__path__` lists no submodules, because the real ones live under
+`autokernel/`. Documentation generators and plugin scanners that enumerate a
+package will find an empty one.
+
+**`__name__` reports the compatibility name.** `motionkernel.specs.__name__` is
+`"autokernel.specs"`, and classes defined there have
+`__module__ == "autokernel.specs.types"`. This is deliberate — it keeps
+pickles stable across both import paths — but it surprises anyone reading a
+traceback or a `repr`.
+
+None of these affect runtime behaviour: imports, class identity, `isinstance`,
+and pickling all work correctly through either name.
+
 ## Later phases
 
 Each phase is gated on the previous one shipping, not on a date.
@@ -93,9 +126,16 @@ elapsed.
 
 ## For downstream users
 
-Nothing is required of you in phase 1. If you are writing new code, prefer
-`motionkernel`; if you have existing code importing `autokernel`, it will keep
-working and will warn you well before it stops.
+Nothing is required of you in phase 1, and nothing is deprecated.
+
+`autokernel` is the namespace to use today. It is fully supported, it is what
+type checkers and IDEs resolve, and it is what every generated artifact
+imports. It is a compatibility namespace by *name*, not by support level.
+
+`motionkernel` is available and works at runtime. Use it if you prefer the
+canonical name and do not depend on static analysis of these imports. It
+becomes the recommended namespace at phase 2, when the modules exist as real
+files and type checkers can see them.
 
 Artifact bundles are unaffected in phase 1 and remain loadable across phase 2.
 

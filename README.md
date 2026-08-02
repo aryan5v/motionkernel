@@ -52,19 +52,24 @@ and fail-closed promotion.
 ### Naming
 
 The product is **MotionKernel** and the distribution is `motionkernel`. The
-canonical import namespace is `motionkernel`:
+import namespace is `autokernel`:
 
 ```python
-from motionkernel.specs import KernelSpec
+from autokernel.specs import KernelSpec
 ```
 
-`autokernel` is a **compatibility namespace** inherited from upstream, not the
-product name and not a second product. It is an alias of the same modules
-(`motionkernel.specs is autokernel.specs`), it still works, and it is not
-deprecated. It remains because every generated `spec.py` imports it and
-artifact bundles are hash-verified, so renaming it would invalidate artifacts
-that already exist. See
-[docs/NAMESPACE_MIGRATION.md](docs/NAMESPACE_MIGRATION.md) for the staged plan.
+`autokernel` is a **compatibility namespace** inherited from upstream — a name,
+not a support level. It is fully supported, it is what type checkers and IDEs
+resolve, and it is what every generated `spec.py` imports. It stays because
+artifact bundles are hash-verified, so renaming the import would invalidate
+artifacts that already exist.
+
+A `motionkernel` import namespace also works at runtime and aliases the same
+modules (`motionkernel.specs is autokernel.specs`, with shared class identity).
+It is not yet the recommended namespace: because it resolves through a runtime
+finder rather than real files, type checkers cannot see it. See
+[docs/NAMESPACE_MIGRATION.md](docs/NAMESPACE_MIGRATION.md) for the measured
+limitations and the four-phase plan that removes them.
 
 ## How It Works
 

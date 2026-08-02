@@ -62,10 +62,12 @@ packages = ["autokernel", "motionkernel"]
 [tool.hatch.build.targets.wheel.force-include]
 "bench.py" = "autokernel/_runtime/bench.py"
 
+
 [tool.hatch.build.targets.sdist]
 include = [
     "/autokernel",
     "/motionkernel",
+    "/scripts",
     "/docs",
     "/tests",
     "/workloads",

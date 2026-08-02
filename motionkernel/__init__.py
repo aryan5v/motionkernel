@@ -120,11 +120,20 @@ class _AliasFinder(MetaPathFinder):
         return ModuleSpec(fullname, _AliasLoader(compatibility_name))
 
 
+#: Marks an installed finder. Identity of the *class* is not usable for this:
+#: ``importlib.reload(motionkernel)`` rebinds ``_AliasFinder`` to a new class
+#: object, so an ``isinstance`` check against the new class misses the finder
+#: installed by the previous execution and a duplicate is appended every time.
+_FINDER_MARKER = "_motionkernel_alias_finder"
+
+
 def _install_finder() -> None:
-    """Install the alias finder once, idempotently."""
-    if any(isinstance(entry, _AliasFinder) for entry in sys.meta_path):
+    """Install the alias finder once, idempotently across module reloads."""
+    if any(getattr(entry, _FINDER_MARKER, False) for entry in sys.meta_path):
         return
-    sys.meta_path.append(_AliasFinder())
+    finder = _AliasFinder()
+    setattr(finder, _FINDER_MARKER, True)
+    sys.meta_path.append(finder)
 
 
 _install_finder()
@@ -143,8 +152,16 @@ def __getattr__(name: str) -> Any:
         raise AttributeError(name)
     try:
         module = importlib.import_module(f"{COMPATIBILITY_NAMESPACE}.{name}")
-    except ImportError:
-        pass
+    except ModuleNotFoundError as exc:
+        # Only "this submodule does not exist" may fall through to the
+        # attribute lookup below. A submodule that *does* exist and failed --
+        # a missing optional dependency, a syntax error, a circular import --
+        # must surface its own error. Reporting that as "module 'motionkernel'
+        # has no attribute 'workload'" hides the cause during exactly the
+        # debugging session where it matters.
+        missing = getattr(exc, "name", None)
+        if missing not in (f"{COMPATIBILITY_NAMESPACE}.{name}", None):
+            raise
     else:
         globals()[name] = module
         return module

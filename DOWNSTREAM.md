@@ -72,8 +72,10 @@ spec_from_manifest`, and artifact bundles are hash-verified. Renaming the
 import would invalidate the manifest of every artifact already produced,
 including promoted ones.
 
-New code should import `motionkernel`. `autokernel` is not deprecated in this
-release and emits no warning. See
+`autokernel` is the namespace to use today: it is fully supported, resolvable
+by type checkers, and not deprecated. `motionkernel` works at runtime but is
+invisible to static analysis until phase 2 replaces the runtime alias with real
+modules. See
 [docs/NAMESPACE_MIGRATION.md](docs/NAMESPACE_MIGRATION.md) for the four-phase
 plan and the gate on each phase.
 

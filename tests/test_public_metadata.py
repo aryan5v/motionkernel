@@ -289,3 +289,94 @@ def test_proven_rows_carry_evidence_links() -> None:
         checked += 1
         assert "](" in cells[-1], f"Proven row without an evidence link: {line}"
     assert checked, "no Proven support rows found; update this guard"
+
+
+# -- alias namespace behaviour ------------------------------------------
+#
+# The alias resolves through a runtime MetaPathFinder. That buys shared module
+# and class identity, and costs static-analysis visibility. These lock the
+# behaviour that is relied on and the failure modes that were found by probing
+# it, so a future change to the mechanism has to confront them deliberately.
+
+
+def test_alias_reports_the_real_import_error_not_a_missing_attribute(tmp_path) -> None:
+    """A submodule that exists but fails to import must surface its own error.
+
+    Reporting a missing optional dependency as "module 'motionkernel' has no
+    attribute 'workload'" hides the cause during exactly the debugging session
+    where it matters.
+    """
+    sys.path.insert(0, str(REPO_ROOT))
+    # A public name: attributes starting with "_" are refused outright, so the
+    # forwarder is never reached for private or dunder introspection.
+    probe = REPO_ROOT / COMPATIBILITY_NAMESPACE / "probeimportfailure.py"
+    probe.write_text('raise ImportError("underlying cause")\n', encoding="utf-8")
+    try:
+        import motionkernel
+
+        with pytest.raises(ImportError, match="underlying cause"):
+            motionkernel.probeimportfailure  # noqa: B018
+    finally:
+        probe.unlink(missing_ok=True)
+        sys.modules.pop(f"{COMPATIBILITY_NAMESPACE}.probeimportfailure", None)
+        sys.path.pop(0)
+
+
+def test_a_genuinely_absent_name_is_still_an_attribute_error() -> None:
+    sys.path.insert(0, str(REPO_ROOT))
+    try:
+        import motionkernel
+
+        with pytest.raises(AttributeError, match="has no attribute"):
+            motionkernel.genuinely_absent_name  # noqa: B018
+    finally:
+        sys.path.pop(0)
+
+
+def test_reloading_the_alias_package_does_not_leak_finders() -> None:
+    """isinstance cannot be used for the idempotency check: reload rebinds the
+    finder class, so the old instance stops matching and duplicates pile up."""
+    import importlib
+
+    sys.path.insert(0, str(REPO_ROOT))
+    try:
+        import motionkernel
+
+        for _ in range(3):
+            importlib.reload(motionkernel)
+        installed = [
+            entry
+            for entry in sys.meta_path
+            if getattr(entry, "_motionkernel_alias_finder", False)
+        ]
+        assert len(installed) == 1, f"{len(installed)} alias finders installed"
+    finally:
+        sys.path.pop(0)
+
+
+def test_alias_finder_declines_unrelated_module_names() -> None:
+    sys.path.insert(0, str(REPO_ROOT))
+    try:
+        from motionkernel import resolve_compatibility_name
+
+        assert resolve_compatibility_name("motionkernel.specs") == "autokernel.specs"
+        assert resolve_compatibility_name("motionkernel") is None
+        assert resolve_compatibility_name("motionkernelish.specs") is None
+        assert resolve_compatibility_name("numpy") is None
+    finally:
+        sys.path.pop(0)
+
+
+def test_both_packages_ship_a_py_typed_marker() -> None:
+    """Without it, an installed wheel gives downstream users no types at all."""
+    for namespace in (COMPATIBILITY_NAMESPACE, CANONICAL_NAMESPACE):
+        marker = REPO_ROOT / namespace / "py.typed"
+        assert marker.is_file(), f"{namespace} has no py.typed marker"
+
+
+def test_the_alias_limitation_is_documented() -> None:
+    """The canonical namespace is invisible to type checkers. Shipping that
+    without saying so would mislead anyone who follows the naming advice."""
+    text = (REPO_ROOT / "docs" / "NAMESPACE_MIGRATION.md").read_text(encoding="utf-8")
+    assert "Known limitations of the alias" in text
+    assert "Cannot find implementation or library stub" in text

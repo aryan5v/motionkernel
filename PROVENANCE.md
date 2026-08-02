@@ -18,10 +18,10 @@ The upstream MIT license and copyright (`Copyright (c) 2026 RightNow AI`) are pr
 
 | Category | Files | Python lines | Share of Python |
 |---|---:|---:|---:|
-| Unchanged from upstream | 45 | 9580 | 21.6% |
+| Unchanged from upstream | 45 | 9580 | 21.5% |
 | Modified descendants | 9 | 3615 | 8.1% |
-| MotionKernel-original | 138 | 31195 | 70.3% |
-| **Total** | **192** | **44390** | |
+| MotionKernel-original | 140 | 31303 | 70.3% |
+| **Total** | **194** | **44498** | |
 
 Inherited Python footprint (unchanged plus modified): **29.7%**. The remaining 70.3% -- the artifact format, graph discovery, spec generation, the workload system, the optimizer control plane, validation and promotion, the CLI, and the FastVideo bridge -- is MotionKernel work.
 
@@ -93,7 +93,7 @@ Present upstream, modified here. Derivative works.
 
 ## MotionKernel-original
 
-Added by this project (138 files). Listed by top-level location; every file under these paths is original unless named above.
+Added by this project (140 files). Listed by top-level location; every file under these paths is original unless named above.
 
 - `.github` (1 file)
 - `CONTRIBUTING.md` (1 file)
@@ -101,7 +101,7 @@ Added by this project (138 files). Listed by top-level location; every file unde
 - `PROVENANCE.md` (1 file)
 - `ROADMAP.md` (1 file)
 - `SECURITY.md` (1 file)
-- `autokernel` (63 files)
+- `autokernel` (64 files)
 - `campaign.py` (1 file)
 - `conftest.py` (1 file)
 - `discovery.py` (1 file)
@@ -109,7 +109,7 @@ Added by this project (138 files). Listed by top-level location; every file unde
 - `examples` (5 files)
 - `kernels` (3 files)
 - `models` (6 files)
-- `motionkernel` (1 file)
+- `motionkernel` (2 files)
 - `optimize.py` (1 file)
 - `scripts` (1 file)
 - `tests` (34 files)
