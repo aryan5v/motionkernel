@@ -11,8 +11,8 @@ hand one whole file to one agent.
 | B | tiered fidelity contracts | **done** — PR #18, verified on sm90+sm100 | — |
 | A | attention as a promotable artifact | **in progress** | do not assign |
 | C | schedule transforms (caching) | ready | `TRACK_C_CACHING.md` |
-| D | dispatch overhead, measured and published | ready | `TRACK_D_DISPATCH.md` |
-| E | support matrix from evidence | ready | `TRACK_E_SUPPORT_MATRIX.md` |
+| D | dispatch overhead, measured and published | **draft PR #21** — tax gone, 22120.1 ms/call | `TRACK_D_DISPATCH.md` |
+| E | support matrix from evidence | **draft PR #22** — generated, CI-checked | `TRACK_E_SUPPORT_MATRIX.md` |
 | F | search farm + experiment store | ready | `TRACK_F_SEARCH_FARM.md` |
 
 ## Read this before assigning anything
