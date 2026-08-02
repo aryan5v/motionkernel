@@ -169,7 +169,15 @@ class TestMatrixGeneration:
                 assert cell["recorded_utc"]
         # The page carries the same claims.
         assert "[promoted](/mnt/nfs/vlm-aryan/ltx-v1-r4-targeted-fix-20260801-203751) 2026-08-02" in markdown
-        assert markdown.count("*not_attempted*") == 9
+        # Derived, not hardcoded: the page must render exactly one
+        # *not_attempted* per cell that has no evidence record. A fixed number
+        # goes stale the moment a workload or an evidence record is added, and
+        # bumping it is indistinguishable from bumping it to hide a cell that
+        # silently lost its evidence.
+        expected_not_attempted = sum(
+            1 for cell in cells.values() if cell["outcome"] == "not_attempted"
+        )
+        assert markdown.count("*not_attempted*") == expected_not_attempted
 
     def test_not_attempted_never_blank(self) -> None:
         markdown, _ = generate_matrix(
