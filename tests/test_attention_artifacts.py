@@ -343,3 +343,75 @@ def test_an_unknown_declared_backend_is_rejected_at_construction() -> None:
 
     with pytest.raises(ArtifactError, match="unknown attention backend"):
         _outcome(attention_declared="MADE_UP", attention_effective="MADE_UP")
+
+
+# -- fail-open paths found in review ------------------------------------
+
+
+def test_a_field_claimed_by_no_kind_is_refused() -> None:
+    """A schema field never attached to a kind must not validate everywhere.
+
+    Without the `common` set, `validate_kind_fields` only rejected fields owned
+    by a *different* kind -- so a field added to the operation schema and never
+    registered would silently pass for every kind, which is the quiet way a
+    contract stops contracting.
+    """
+    with pytest.raises(ValueError, match="belongs to no registered kind"):
+        validate_kind_fields(
+            MODULE, {"name": "x", "invented_field": 1}, common=frozenset({"name"})
+        )
+
+
+def test_common_fields_are_accepted_for_every_kind() -> None:
+    for kind in (MODULE, SUBGRAPH):
+        validate_kind_fields(
+            kind,
+            {"name": "x", "capture_mode": "export"}
+            if kind == SUBGRAPH
+            else {"name": "x"},
+            common=frozenset({"name"}),
+        )
+
+
+def test_finalizing_an_attention_bundle_requires_a_measured_backend(
+    tmp_path,
+) -> None:
+    """The bundle decides whether the check runs, not the caller.
+
+    GenerationOutcome skips the backend check when attention_declared is None,
+    so an adapter that forgot to populate it would promote an attention
+    artifact with no verification -- the same fail-open one level up.
+    """
+    from autokernel.artifact import ArtifactError, finalize_bundle
+
+    from test_artifact_finalization import _bundle, _sections
+
+    sections = _sections()
+    sections["operation"]["target_kind"] = ATTENTION
+    sections["operation"]["attention_backend"] = "SAGE_ATTN"
+    bundle = _bundle(tmp_path, sections=sections)
+
+    with pytest.raises(ArtifactError, match="carries none"):
+        finalize_bundle(bundle, _outcome(fidelity=_tier2(), perceptual=_evidence()))
+
+
+def test_finalizing_refuses_a_backend_the_bundle_did_not_declare(tmp_path) -> None:
+    from autokernel.artifact import ArtifactError, finalize_bundle
+
+    from test_artifact_finalization import _bundle, _sections
+
+    sections = _sections()
+    sections["operation"]["target_kind"] = ATTENTION
+    sections["operation"]["attention_backend"] = "SAGE_ATTN"
+    bundle = _bundle(tmp_path, sections=sections)
+
+    with pytest.raises(ArtifactError, match="was measured against"):
+        finalize_bundle(
+            bundle,
+            _outcome(
+                fidelity=_tier2(),
+                perceptual=_evidence(),
+                attention_declared="VIDEO_SPARSE_ATTN",
+                attention_effective="VIDEO_SPARSE_ATTN",
+            ),
+        )

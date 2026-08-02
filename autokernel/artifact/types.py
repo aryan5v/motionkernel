@@ -69,6 +69,13 @@ _OPERATION_FIELDS = {
     "attention_backend",
     "attention_config",
 }
+#: Operation-identity fields every kind carries. Anything outside this set must
+#: be claimed by a registered kind, so a field added to the schema and never
+#: attached to a kind fails validation instead of quietly applying to all of
+#: them.
+_OPERATION_COMMON_FIELDS = frozenset(
+    {"name", "graph_fingerprint", "parent_module", "operations", "target_kind"}
+)
 _SIGNATURE_FIELDS = {"inputs", "outputs"}
 _TENSOR_FIELDS = {"name", "shape", "stride", "dtype", "device_type", "requires_grad"}
 _ENTRY_POINT_FIELDS = {"file", "symbol"}
@@ -560,7 +567,9 @@ class OperationIdentity:
         # registration instead of an edit to a conditional every other kind
         # also reads. See autokernel/artifact/kinds.py.
         try:
-            validate_kind_fields(target_kind, raw)
+            validate_kind_fields(
+                target_kind, raw, common=_OPERATION_COMMON_FIELDS
+            )
         except ValueError as error:
             raise _fail(source, f"{location}.target_kind", str(error)) from error
 

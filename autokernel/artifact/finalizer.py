@@ -355,6 +355,29 @@ def finalize_bundle(
     directory = Path(bundle_dir)
     manifest = verify_bundle(directory)
     source = str(directory)
+
+    # The bundle, not the caller, decides whether a backend check is required.
+    # GenerationOutcome.attention_declared skips the check when it is None, so
+    # an adapter that simply forgot to populate it would promote an attention
+    # artifact with no verification at all -- the exact fail-open the check
+    # exists to close, one level up. Cross-check against the manifest instead
+    # of trusting the caller to have remembered.
+    declared_on_bundle = getattr(manifest.operation, "attention_backend", None)
+    if declared_on_bundle is not None:
+        if outcome.attention_declared is None:
+            raise ArtifactError(
+                f"artifact bundle {source!r}: operation declares attention "
+                f"backend {declared_on_bundle!r}, but the generation outcome "
+                f"carries none; refusing to finalize an attention artifact "
+                f"without verifying which backend actually ran"
+            )
+        if outcome.attention_declared != declared_on_bundle:
+            raise ArtifactError(
+                f"artifact bundle {source!r}: operation declares attention "
+                f"backend {declared_on_bundle!r} but the generation outcome "
+                f"was measured against {outcome.attention_declared!r}"
+            )
+
     decision, reason = outcome.decide()
 
     current = manifest.promotion.decision
