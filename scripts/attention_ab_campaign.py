@@ -161,6 +161,30 @@ def main() -> int:
     speedup_median = native["median"] / cand["median"]
     speedup_min = native["min"] / cand["min"]
 
+    # -- 3. tier-2 perceptual evidence -------------------------------
+    # The native arm's frames are the reference. Both arms ran at the same
+    # fixed seed, so any difference is the backend's, not the sampler's.
+    fidelity_block: dict[str, object] = {"status": "not_measured"}
+    if native["frames"] and cand["frames"]:
+        import numpy as np
+
+        from autokernel.verification.fidelity import evaluate_fidelity
+        from autokernel.verification.perceptual import FrameSet, compare_frame_sets
+
+        reference = np.load(native["frames"])
+        candidate_frames = np.load(cand["frames"])
+        evidence = compare_frame_sets(
+            FrameSet(budget.frame_set, budget.seed or 0, reference),
+            FrameSet(budget.frame_set, budget.seed or 0, candidate_frames),
+        )
+        verdict = evaluate_fidelity(budget, evidence, parity_passed=False)
+        fidelity_block = {
+            "status": "measured",
+            "evidence": evidence.as_dict(),
+            "verdict": verdict.as_dict(),
+        }
+        print(f"\nfidelity: {verdict.reason}")
+
     receipt = {
         "workload_id": workload.workload_id,
         "status": "measured",
@@ -171,6 +195,7 @@ def main() -> int:
         "speedup_median": speedup_median,
         "speedup_min_to_min": speedup_min,
         "min_end_to_end_speedup": workload.performance.min_end_to_end_speedup,
+        "fidelity": fidelity_block,
     }
     (output / "campaign.json").write_text(
         json.dumps(receipt, indent=2, sort_keys=True) + "\n"
