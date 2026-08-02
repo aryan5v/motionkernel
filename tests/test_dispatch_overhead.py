@@ -297,3 +297,161 @@ class HostProfileSummaryTest(unittest.TestCase):
 
         with self.assertRaises(DispatchAnalysisError):
             host_profile_summary(TimingReport.from_dict(R4_EAGER_PROFILE))
+
+
+class VarianceControlsTest(unittest.TestCase):
+    def test_within_ceiling_is_valid(self) -> None:
+        from autokernel.dispatch import variance_block
+
+        block = variance_block(
+            [3.10, 3.12, 3.11, 3.13, 3.10, 3.12], [3.00, 3.01, 3.00, 3.02, 3.01, 3.00]
+        )
+        self.assertTrue(block["valid_for_gating"])
+        self.assertLess(block["native_cv"], 0.03)
+        self.assertEqual(block["cv_ceiling"], 0.03)
+
+    def test_above_ceiling_is_invalid_but_recorded(self) -> None:
+        from autokernel.dispatch import variance_block
+
+        # The R4 section 3 contention pattern: 38% native spread.
+        block = variance_block(
+            [3.31, 3.34, 3.37, 4.59, 4.35], [3.00, 3.01, 3.00, 3.02, 3.01]
+        )
+        self.assertFalse(block["valid_for_gating"])
+        self.assertIn("exceeds the 0.03 ceiling", block["reason"])
+
+    def test_unmeasurable_variance_is_invalid(self) -> None:
+        from autokernel.dispatch import variance_block
+
+        block = variance_block([3.10], [3.00])
+        self.assertFalse(block["valid_for_gating"])
+        self.assertIsNone(block["native_cv"])
+
+    def test_capture_controls_reads_env_and_clocks(self) -> None:
+        from autokernel.dispatch import capture_controls
+
+        class FakeCompleted:
+            returncode = 0
+            stdout = "2610, 2610, 2610, 2610\n"
+            stderr = ""
+
+        controls = capture_controls(
+            {
+                "MOTIONKERNEL_NODE_EXCLUSIVE": "1",
+                "MOTIONKERNEL_CLOCKS_LOCKED": "1",
+                "SLURM_JOB_ID": "1040",
+            },
+            runner=lambda *a, **k: FakeCompleted(),
+        )
+        self.assertTrue(controls["node_exclusive"])
+        self.assertEqual(controls["slurm_job_id"], "1040")
+        self.assertEqual(controls["gpu_clocks"]["state"], "locked")
+        self.assertEqual(controls["gpu_clocks"]["sm_clock_mhz"], 2610)
+        self.assertTrue(controls["gpu_clocks"]["at_max"])
+
+    def test_capture_controls_defaults_are_honest(self) -> None:
+        from autokernel.dispatch import capture_controls
+
+        class FakeCompleted:
+            returncode = 1
+            stdout = ""
+            stderr = "insufficient permissions"
+
+        controls = capture_controls({}, runner=lambda *a, **k: FakeCompleted())
+        self.assertFalse(controls["node_exclusive"])
+        self.assertEqual(controls["gpu_clocks"]["state"], "unknown")
+        self.assertIn("insufficient permissions", controls["gpu_clocks"]["error"])
+
+
+class ABVarianceTest(unittest.TestCase):
+    """The comparison schema (v2) carries the variance block end to end."""
+
+    def _result(self, wall_seconds):
+        from autokernel.workload.result import GenerationRunResult
+
+        return GenerationRunResult.from_dict(
+            {
+                "schema_version": 1,
+                "mode": "native",
+                "status": "ok",
+                "workload_id": "w",
+                "model_id": "m",
+                "request": {"sampling": {}, "output": {}},
+                "warmups": 1,
+                "runs": len(wall_seconds),
+                "wall_seconds": wall_seconds,
+                "median_wall_seconds": sorted(wall_seconds)[len(wall_seconds) // 2],
+                "generation_seconds": [],
+                "peak_memory_mb": [],
+                "environment": {},
+            }
+        )
+
+    def test_classify_carries_variance_block(self) -> None:
+        from autokernel.workload.result import classify_end_to_end
+
+        native = self._result([3.10, 3.12, 3.11, 3.13, 3.10])
+        optimized = self._result([3.00, 3.01, 3.00, 3.02, 3.01])
+        comparison = classify_end_to_end(native, optimized)
+        self.assertEqual(comparison["comparison_schema_version"], 2)
+        self.assertTrue(comparison["variance_valid"])
+        self.assertIn("native_cv", comparison)
+        self.assertIn("optimized_cv", comparison)
+
+    def test_classify_marks_contended_measurement_invalid(self) -> None:
+        from autokernel.workload.result import classify_end_to_end
+
+        native = self._result([3.31, 3.34, 3.37, 4.59, 4.35])
+        optimized = self._result([3.00, 3.01, 3.00, 3.02, 3.01])
+        comparison = classify_end_to_end(native, optimized)
+        self.assertFalse(comparison["variance_valid"])
+        self.assertIn("exceeds", comparison["variance_reason"])
+
+    def test_promotion_blocked_when_variance_invalid(self) -> None:
+        from autokernel.optimize.runner import _decide_terminal
+
+        state = {"candidates": [{"fingerprint": "fp"}]}
+        stage_results = {
+            "end_to_end_validate": {
+                "recommendation": "promoted",
+                "metrics": {
+                    "end_to_end_speedup": 1.08,
+                    "classification": "improved",
+                    "variance_valid": False,
+                    "variance_reason": "native-arm coefficient of variation 0.1490 exceeds the 0.03 ceiling",
+                },
+            }
+        }
+        terminal, message = _decide_terminal(state, stage_results, min_e2e_speedup=1.01)
+        self.assertEqual(terminal, "no_worthwhile_candidate")
+        self.assertIn("coefficient of variation", message)
+
+    def test_promotion_allowed_when_variance_measured_and_valid(self) -> None:
+        from autokernel.optimize.runner import _decide_terminal
+
+        state = {"candidates": [{"fingerprint": "fp"}]}
+        stage_results = {
+            "end_to_end_validate": {
+                "recommendation": "promoted",
+                "metrics": {
+                    "end_to_end_speedup": 1.08,
+                    "classification": "improved",
+                    "variance_valid": True,
+                },
+            }
+        }
+        terminal, _ = _decide_terminal(state, stage_results, min_e2e_speedup=1.01)
+        self.assertEqual(terminal, "promoted")
+
+    def test_legacy_metrics_without_variance_still_promote(self) -> None:
+        from autokernel.optimize.runner import _decide_terminal
+
+        state = {"candidates": [{"fingerprint": "fp"}]}
+        stage_results = {
+            "end_to_end_validate": {
+                "recommendation": "promoted",
+                "metrics": {"end_to_end_speedup": 1.08, "classification": "improved"},
+            }
+        }
+        terminal, _ = _decide_terminal(state, stage_results, min_e2e_speedup=1.01)
+        self.assertEqual(terminal, "promoted")

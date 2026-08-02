@@ -146,6 +146,21 @@ def _cmd_summarize(args: argparse.Namespace) -> int:
     record = json.loads(args.measurement.read_text(encoding="utf-8"))
     print(f"workload: {record['workload_id']}  model: {record['model_id']}")
     print(f"arch: {record['arch']}  status: {record['status']}  date: {record['created_utc']}")
+    variance = record.get("variance")
+    if variance:
+        print(
+            f"variance: native_cv={variance['native_cv']} candidate_cv={variance['candidate_cv']} "
+            f"ceiling={variance['cv_ceiling']} valid_for_gating={variance['valid_for_gating']}"
+        )
+        print(f"  {variance['reason']}")
+    controls = record.get("controls")
+    if controls:
+        clocks = controls.get("gpu_clocks") or {}
+        print(
+            f"controls: node_exclusive={controls.get('node_exclusive')} "
+            f"clocks={clocks.get('state')} (sm {clocks.get('sm_clock_mhz')}/{clocks.get('sm_clock_max_mhz')} MHz) "
+            f"slurm_job={controls.get('slurm_job_id')}"
+        )
     native, candidate = record["native"], record["candidate"]
     print(
         f"native    median {native['median']:.4f}s stdev {native['stdev']:.4f} "

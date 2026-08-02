@@ -33,6 +33,7 @@ from autokernel.workload.launcher import run_mode
 from autokernel.workload.result import compare_frame_outputs, load_generation_result
 from autokernel.workload.types import MeasurementSpec, WorkloadManifest, dump_workload
 
+from .controls import DEFAULT_CV_CEILING, capture_controls, variance_block
 from .overhead import (
     DEFAULT_CALL_VOLUMES,
     DEFAULT_GATE,
@@ -45,7 +46,11 @@ from .overhead import (
 )
 
 MEASUREMENT_SCHEMA = "motionkernel.dispatch-measurement"
-MEASUREMENT_SCHEMA_VERSION = 1
+#: v2 adds the launch-controls block (node exclusivity, GPU clock state)
+#: and the measured per-arm coefficients of variation with a declared
+#: ceiling; a measurement whose native arm exceeds the ceiling is
+#: recorded but marked invalid for gating.
+MEASUREMENT_SCHEMA_VERSION = 2
 
 #: Measurement discipline (docs/agent-briefs/TRACK_D_DISPATCH.md section 5):
 #: runs: 2 and runs: 5 both produced conclusions that later reversed.
@@ -77,12 +82,18 @@ def _utc_now() -> str:
 def _arm_stats(wall_seconds: Sequence[float]) -> dict[str, Any]:
     if not wall_seconds:
         raise MeasurementError("an arm produced no timed runs")
+    mean = statistics.fmean(wall_seconds)
     return {
         "runs": [round(value, 4) for value in wall_seconds],
         "count": len(wall_seconds),
         "median": round(statistics.median(wall_seconds), 4),
         "stdev": (
             round(statistics.stdev(wall_seconds), 4) if len(wall_seconds) > 1 else 0.0
+        ),
+        "cv": (
+            round(statistics.stdev(wall_seconds) / mean, 4)
+            if len(wall_seconds) > 1 and mean > 0
+            else None
         ),
         "min": round(min(wall_seconds), 4),
         "max": round(max(wall_seconds), 4),
@@ -169,6 +180,7 @@ def run_dispatch_measurement(
     python: str | None = None,
     env_extra: Mapping[str, str] | None = None,
     timeout: float | None = None,
+    cv_ceiling: float = DEFAULT_CV_CEILING,
 ) -> dict[str, Any]:
     """Run the full measurement and write the measurement record.
 
@@ -342,10 +354,19 @@ def run_dispatch_measurement(
     capability = str(environment.get("gpu_capability") or "")
     arch = f"sm{capability.replace('.', '')}" if capability else "unknown"
 
+    controls = capture_controls()
+    variance = variance_block(
+        list(native_result.wall_seconds),
+        list(candidate_result.wall_seconds),
+        cv_ceiling=cv_ceiling,
+    )
+
     record: dict[str, Any] = {
         "schema": MEASUREMENT_SCHEMA,
         "schema_version": MEASUREMENT_SCHEMA_VERSION,
         "created_utc": _utc_now(),
+        "controls": controls,
+        "variance": variance,
         "workload_id": manifest.workload_id,
         "model_id": model_id,
         "artifact_root": str(artifacts),

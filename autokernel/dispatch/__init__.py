@@ -6,6 +6,7 @@ produces the evidence, :func:`attribute_overhead` and
 :func:`breakeven_curve` derives what other tracks need from it.
 """
 
+from .controls import DEFAULT_CV_CEILING, capture_controls, variance_block
 from .measure import (
     MEASUREMENT_SCHEMA,
     MEASUREMENT_SCHEMA_VERSION,
@@ -32,6 +33,7 @@ from .overhead import (
 __all__ = [
     "BreakEvenPoint",
     "DEFAULT_CALL_VOLUMES",
+    "DEFAULT_CV_CEILING",
     "DEFAULT_GATE",
     "DispatchAnalysisError",
     "E2EOverhead",
@@ -43,6 +45,8 @@ __all__ = [
     "TimingReport",
     "attribute_overhead",
     "breakeven_curve",
+    "capture_controls",
+    "variance_block",
     "host_profile_summary",
     "load_timing_report",
     "overhead_from_e2e",
