@@ -125,13 +125,21 @@ class TestRecordFromReceipt:
 
 class TestMatrixGeneration:
     def test_repo_manifests_all_validate(self) -> None:
+        """Every manifest in workloads/ loads, and the families we claim exist.
+
+        Deliberately not asserting a manifest *count*: that number changes
+        whenever a workload is added, and a test that has to be edited to admit
+        new evidence trains people to edit it. What matters is that all of them
+        validate and that the claimed families are present -- both of which
+        stay true as the set grows.
+        """
         paths = sorted((REPO_ROOT / "workloads").glob("*.yaml"))
-        assert len(paths) == 6
+        assert paths, "no workload manifests found"
         families = set()
         for path in paths:
             manifest = load_workload(path)
             families.add(manifest.tags[0])
-        assert families == {"ltx", "wan", "fastwan", "hunyuan", "cosmos25"}
+        assert {"ltx", "wan", "fastwan", "hunyuan", "cosmos25"} <= families
 
     def test_matrix_from_repo_state(self) -> None:
         markdown, sidecar = generate_matrix(
@@ -139,8 +147,11 @@ class TestMatrixGeneration:
             evidence_dir=REPO_ROOT / "docs" / "support-evidence",
             today=date(2026, 8, 2),
         )
-        # Six rows, two arches.
-        assert len(sidecar["rows"]) == 6
+        # One row per manifest, two arches. The row count is derived rather
+        # than hardcoded so adding a workload cannot silently drop it from the
+        # matrix while the test still passes.
+        manifest_count = len(sorted((REPO_ROOT / "workloads").glob("*.yaml")))
+        assert len(sidecar["rows"]) == manifest_count
         assert sidecar["arches"] == ["sm100", "sm90"]
         cells = {
             (row["workload_id"], arch): row["cells"][arch]
