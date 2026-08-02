@@ -36,6 +36,7 @@ from typing import Any
 __all__ = [
     "ATTENTION",
     "MODULE",
+    "SCHEDULE_TRANSFORM",
     "SUBGRAPH",
     "TargetKind",
     "known_target_kinds",
@@ -46,6 +47,7 @@ __all__ = [
 MODULE = "module"
 SUBGRAPH = "subgraph"
 ATTENTION = "attention"
+SCHEDULE_TRANSFORM = "schedule_transform"
 
 
 @dataclass(frozen=True)
@@ -127,6 +129,16 @@ register_target_kind(
         optional=frozenset({"attention_config"}),
         replaces_region=False,
         description="selects an attention backend implementation",
+    )
+)
+
+
+register_target_kind(
+    TargetKind(
+        name=SCHEDULE_TRANSFORM,
+        required=frozenset({"transform_family", "transform_policy"}),
+        replaces_region=False,
+        description="wraps the denoising loop and may skip steps",
     )
 )
 

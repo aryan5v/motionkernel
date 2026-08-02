@@ -97,8 +97,11 @@ def test_module_targets_still_reject_subgraph_rewrite_fields() -> None:
 
 
 def test_unknown_kind_lists_the_known_ones() -> None:
+    # Deliberately not a plausible-but-unregistered name: "schedule_transform"
+    # was used here until Track C registered it, and the test then passed for
+    # the wrong reason right up until it failed for the right one.
     with pytest.raises(ArtifactError, match="unknown target_kind"):
-        _parse(target_kind="schedule_transform")
+        _parse(target_kind="definitely_not_a_registered_kind")
 
 
 def test_a_new_kind_can_be_registered_without_touching_validation() -> None:
