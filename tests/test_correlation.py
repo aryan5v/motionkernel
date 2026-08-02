@@ -234,6 +234,55 @@ def test_exclusive_time_without_double_counting():
     assert region.self_cuda_time_us <= 5000.0
 
 
+def test_exact_region_range_excludes_nested_operator_time():
+    """A named range already includes its children and is authoritative."""
+    profiler_rows = [
+        OperatorHotspot(
+            name="transformer.blocks.shape-a",
+            op_key="transformer.blocks.shape-a",
+            calls=20,
+            cuda_time_us=9000.0,
+            self_cuda_time_us=0.0,
+            parent_module="transformer.blocks",
+        ),
+        OperatorHotspot(
+            name="aten::mm",
+            op_key="aten::mm",
+            calls=200,
+            cuda_time_us=7000.0,
+            self_cuda_time_us=7000.0,
+            parent_module="transformer.blocks",
+        ),
+        OperatorHotspot(
+            name="aten::add",
+            op_key="aten::add",
+            calls=200,
+            cuda_time_us=1000.0,
+            self_cuda_time_us=1000.0,
+            parent_module="transformer.blocks",
+        ),
+    ]
+    region = GraphRegion.build(
+        name="transformer.blocks.shape-a",
+        operations=["aten::mm", "aten::add"],
+        inputs=[_tensor("x")],
+        parent_module="transformer.blocks",
+        calls=20,
+    )
+
+    correlated, unmatched = correlate_profiler_to_regions(
+        profiler_rows,
+        [region],
+        total_cuda_time_us=10000.0,
+    )
+
+    assert unmatched == ()
+    assert correlated[0].cuda_time_us == 9000.0
+    assert correlated[0].self_cuda_time_us == 9000.0
+    assert correlated[0].calls == 20
+    assert correlated[0].attributes["e2e_share_pct"] == 90.0
+
+
 def test_synthetic_cpu_fixtures_produce_timed_regions():
     """Test that synthetic CPU fixtures produce non-zero timed regions."""
     # Create profiler rows with synthetic CPU timing

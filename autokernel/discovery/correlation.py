@@ -152,19 +152,6 @@ def _aggregate_region_timing(
     if not profiler_rows:
         return region.cuda_time_us, region.self_cuda_time_us, region.calls
 
-    # A shape-specific record_function range names the region itself. PyTorch
-    # reports its useful device attribution as inclusive CUDA time while its
-    # self CUDA time is normally zero (the range launches no kernel directly).
-    # Treat that inclusive duration as the region's attributed duration. This
-    # is safe per candidate; callers must not sum nested candidate shares.
-    attributed_self = [
-        row.cuda_time_us if row.name == region.name else row.self_cuda_time_us
-        for row in profiler_rows
-    ]
-
-    total_cuda = sum(row.cuda_time_us for row in profiler_rows)
-    total_self_cuda = sum(attributed_self)
-
     # ``calls`` means "how many times was this region invoked", because that is
     # what the impact model multiplies a per-call saving by. Summing the call
     # counts of every matched profiler row answers a different question -- how
@@ -178,8 +165,18 @@ def _aggregate_region_timing(
     # invocation, so it is the authoritative count when present.
     named_rows = [row for row in profiler_rows if row.name == region.name]
     if named_rows:
+        # The named record_function range is the authoritative inclusive
+        # duration for this region. Operator rows inside that range are nested
+        # children, not additional work. Adding both inflated Cosmos's
+        # transformer attribution from 275.7s to 485.1s and made a 21.8ms text
+        # encoder range look like 199.5s. Use only the exact ranges whenever
+        # FastVideo emitted them.
+        total_cuda = sum(row.cuda_time_us for row in named_rows)
+        total_self_cuda = total_cuda
         total_calls = sum(row.calls for row in named_rows)
     else:
+        total_cuda = sum(row.cuda_time_us for row in profiler_rows)
+        total_self_cuda = sum(row.self_cuda_time_us for row in profiler_rows)
         # No range for this region: every matched row saw the region at least
         # once, so the largest single row bounds the invocation count from
         # below without inventing launches the region never made.
