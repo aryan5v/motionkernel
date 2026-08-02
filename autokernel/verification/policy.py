@@ -29,8 +29,10 @@ This module never imports torch.
 
 from __future__ import annotations
 
+import math
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any
 
 from ..specs.types import SpecValidationError, Tolerance
 
@@ -119,9 +121,9 @@ class ParityPolicy:
                 raise SpecValidationError(
                     f"ParityPolicy.{field_name} must be a number, got {value!r}"
                 )
-            if value != value or value < 0:
+            if not math.isfinite(value) or value < 0:
                 raise SpecValidationError(
-                    f"ParityPolicy.{field_name} must be non-negative and not NaN, "
+                    f"ParityPolicy.{field_name} must be finite and non-negative, "
                     f"got {value!r}"
                 )
 
@@ -175,7 +177,7 @@ class ParityPolicy:
         }
 
     @classmethod
-    def from_dict(cls, raw: Mapping[str, Any] | None) -> "ParityPolicy":
+    def from_dict(cls, raw: Mapping[str, Any] | None) -> ParityPolicy:
         """Build from a manifest/JSON fragment, tolerating absent fields."""
         if raw is None:
             return cls()
@@ -193,7 +195,7 @@ class ParityPolicy:
         )
 
     @classmethod
-    def from_workload(cls, workload: Any) -> "ParityPolicy":
+    def from_workload(cls, workload: Any) -> ParityPolicy:
         """Derive the policy from a loaded workload definition.
 
         Accepts anything exposing a ``parity`` attribute with ``policy``/

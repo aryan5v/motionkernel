@@ -31,15 +31,6 @@ from .corpus import (
     validate_corpus_against_spec,
     weighted_aggregate,
 )
-from .policy import (
-    APPROXIMATE_MATH_MARKERS,
-    EXACT_POLICIES,
-    KNOWN_POLICIES,
-    ParityPolicy,
-    ToleranceResolutionError,
-    detect_approximate_math,
-    resolve_leaf_tolerance,
-)
 from .outputs import (
     DEFAULT_TOLERANCE,
     LeafRecord,
@@ -50,6 +41,15 @@ from .outputs import (
     compare_tensor_leaf,
     flatten_output_tree,
     tree_has_nan_or_inf,
+)
+from .policy import (
+    APPROXIMATE_MATH_MARKERS,
+    EXACT_POLICIES,
+    KNOWN_POLICIES,
+    ParityPolicy,
+    ToleranceResolutionError,
+    detect_approximate_math,
+    resolve_leaf_tolerance,
 )
 from .results import (
     RESULT_SCHEMA_VERSION,

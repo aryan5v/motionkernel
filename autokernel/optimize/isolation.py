@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping, Sequence
+from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -37,8 +38,8 @@ from autokernel.workload.result import (
 )
 
 __all__ = [
-    "TrialRecord",
     "IsolationReport",
+    "TrialRecord",
     "artifact_ids_in",
     "dispatch_counts_for",
     "run_isolation_trials",
@@ -352,12 +353,10 @@ def _run_one_trial(
         )
 
     counts: dict[str, Any] = {"calls": 0, "candidate_calls": 0, "runtime_fallbacks": 0, "scopes": ()}
-    try:
+    with suppress(Exception):
         counts = dispatch_counts_for(
             json.loads(diagnostics_path.read_text(encoding="utf-8")), trial_ids
         )
-    except Exception:  # noqa: BLE001 - a missing report is recorded, not fatal
-        pass
 
     parity = compare_frame_outputs(
         native.frames_path,

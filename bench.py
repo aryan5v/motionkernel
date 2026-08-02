@@ -30,6 +30,7 @@ import signal
 import sys
 import time
 import traceback
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 

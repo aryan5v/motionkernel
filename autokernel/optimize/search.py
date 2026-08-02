@@ -20,15 +20,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from autokernel.specgen import (
-    build_dispatch_contract,
-    spec_from_manifest,
-    write_runtime_adapter,
-)
 from autokernel.discovery.ranking import (
     measured_e2e_improvement,
     measured_e2e_improvement_from_latency,
     projected_end_to_end_speedup,
+)
+from autokernel.specgen import (
+    build_dispatch_contract,
+    spec_from_manifest,
+    write_runtime_adapter,
 )
 from autokernel.verification.policy import ParityPolicy
 from autokernel.workload import load_workload
