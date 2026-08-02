@@ -15,9 +15,9 @@ import sys
 from pathlib import Path
 
 import pytest
-from conftest import FIXTURES_DIR, REPO_ROOT
 
 from autokernel.specs import create_builtin_registry, load_spec
+from conftest import FIXTURES_DIR, REPO_ROOT
 
 FIXTURE_LOCATOR = f"{FIXTURES_DIR / 'custom_add.py'}:SPEC"
 
@@ -99,6 +99,21 @@ def test_operation_precedence_spec_then_kernel_then_declared():
     assert bench.resolve_operation_name(None, None, "declared") == "declared"
     # nothing selected
     assert bench.resolve_operation_name(None, None, None) is None
+
+
+def test_candidate_loader_uses_explicit_working_directory(tmp_path: Path):
+    bench = pytest.importorskip("bench")
+    (tmp_path / "kernel.py").write_text(
+        "KERNEL_TYPE = 'generated'\n"
+        "def kernel_fn(**inputs):\n"
+        "    return inputs\n",
+        encoding="utf-8",
+    )
+
+    module = bench.load_candidate_module(str(tmp_path))
+
+    assert module.KERNEL_TYPE == "generated"
+    assert module.kernel_fn(input_0=3) == {"input_0": 3}
 
 
 def test_legacy_kernel_configs_view_is_derived_from_the_registry():
@@ -279,6 +294,7 @@ def test_extract_synthesizes_a_target_from_a_spec_alone():
         "--shape-corpus-only",
         "--check-backward",
         "--check-compile",
+        "--baseline",
         "--result-json",
     ],
 )

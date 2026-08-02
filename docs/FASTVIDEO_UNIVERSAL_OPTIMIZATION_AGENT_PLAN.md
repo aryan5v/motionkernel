@@ -434,7 +434,7 @@ FastVideo PR: https://github.com/aryan5v/FastVideo/pull/18
   launcher that loads a workload manifest, runs one mode per process, and
   writes structured result JSON.
 
-### Workstream 2 (in progress)
+### Workstream 2
 
 MotionKernel:
 
@@ -492,3 +492,134 @@ MotionKernel:
   validated ranked regions. Because the top Wan region is a whole block with
   rejected operations, Workstream 4 must include safe allowlisted subregion
   derivation or explicitly conclude that the region cannot yet be specified.
+
+### Workstream 4 (in progress)
+
+- FastVideo capture schema 2 adds `attributes.executable_ir` for successful
+  export captures. It records generic lifted/runtime tensor metadata, exact
+  operand wiring, safe constants, and output selection without values,
+  parameter paths, source, prompts, or activations.
+- MotionKernel's `autokernel/specgen/` validates that IR, checks it against the
+  canonical operation list, isolates the best connected allowlisted component,
+  and writes a `KernelSpec`, eager candidate, manifest, and weighted corpus
+  through `discovery.py specgen`.
+- The initial exact-overload allowlist is evidence-driven: elementwise
+  arithmetic, LayerNorm, casts, reshapes/views, broadcast transforms,
+  transpose/permute, slicing, and tuple selection. Unknown targets and
+  argument expressions fail closed.
+- CPU validation covers invalid fingerprints/IR, forward references,
+  non-allowlisted execution, safe boundary isolation, CLI artifact round-trip,
+  call-count corpus weighting, BF16 tolerance selection, and zero-tolerance
+  generated-reference parity with the three handwritten Wan references.
+- Plan gap found during implementation: a region's ordered operation names and
+  dependency strings are not sufficient to reconstruct executable semantics.
+  Operand-aware IR was therefore added instead of guessing argument order or
+  outputs. Also, each current region is one shape variant, so the first
+  generated corpus faithfully contains that exact observation and weight;
+  cross-region multi-shape aggregation is deferred rather than inventing
+  intermediate shapes.
+- The production Wan tensor dimensions are too large for exhaustive
+  zero-tolerance CPU allocations (individual cases can exceed a gigabyte).
+  CPU parity uses small tensors with the identical operation/dtype boundaries;
+  the real captured production shape is validated with the unchanged GPU
+  harness before this workstream exits.
+
+### Workstream 5 (Task 3 integration in progress)
+
+- Closed the producer/consumer granularity gap: graph-derived search targets
+  are internal allowlisted subregions, while the original runtime dispatcher
+  could replace only a whole repeated block. Generated manifests now retain a
+  canonical export rewrite recipe and exact boundary tensor layouts.
+- FastVideo can rebuild the representative exported graph against each live
+  block and replace only the selected nodes. Unselected attention/projection
+  code and live per-block parameters remain native; no Wan-specific runtime
+  condition was introduced.
+- Quarantined candidates remain disabled in production. A separate explicit
+  validation mode admits them only after isolated benchmark correctness passes,
+  enabling honest native-versus-candidate generation before final promotion.
+- CPU cross-repository proof is complete. Wan GB200 packaging, dispatch parity,
+  and end-to-end timing remain the Task 3 GPU exit criteria.
+- Wan GB200 acceptance jobs 927 and 928 validated native generation, metadata
+  capture, profiler ingestion, and timing correlation on the current producer.
+  Job 927 exposed a PyTorch-distribution-specific `OpOverload` identity mismatch;
+  FastVideo now uses canonical operator schemas. Job 928 then ranked the export
+  parent at 83.4139% of measured self CUDA time but stopped because ranking
+  applied whole-parent rejection reasons before spec generation could isolate
+  its safe component.
+- Ranking now probes the same fail-closed safe-subregion derivation used by
+  spec generation. A derived candidate retains the unsafe parent's reasons as
+  provenance, reports its impact as a parent-region upper bound, and is never
+  treated as permission to execute or replace the rejected parent graph.
+
+### Workstream 5 (V1 implementation complete)
+
+- MotionKernel owns the versioned artifact manifest, hash-verifying packager,
+  validator, compatibility matcher, runtime-adapter generator, and write-once
+  finalizer. Generated adapters load without writing bytecode into a bundle.
+- FastVideo owns the generic consumer. It discovers repeated module stacks,
+  matches graph fingerprints plus tensor signatures, rebuilds only the selected
+  export subgraph against each live block, and preserves native code outside
+  that subgraph. Model identifiers are manifest data, never dispatch branches.
+- Trusted artifacts are compiled from the exact bytes that were hashed. Bundle
+  enumeration rejects symlinked directories, loading creates no `pycache`, and
+  the manifest is reverified before activation. Any ambiguity, incompatibility,
+  or runtime failure remains native and is recorded in structured diagnostics.
+- Candidate calls run through the live module-hook lifecycle, including
+  layerwise offload and managed parameter materialization. This was required by
+  Wan, whose offload hook keeps rank-preserving zero-sized placeholders outside
+  a forward call; bypassing the lifecycle would dispatch against absent weights.
+- CPU validation on the integrated FastVideo V1 head completed with 73 passing
+  tests across `fastvideo/tests/optimization`.
+
+### Workstream 6 (V1 implementation complete)
+
+- `optimize.py` now owns the complete durable pipeline: `baseline -> profile ->
+  discover -> specgen -> search -> isolated_validate -> package ->
+  end_to_end_validate -> finalize`. Stages run in isolated subprocesses and
+  exchange versioned files under the run directory.
+- Autonomous search edits only a per-candidate workspace. The fixed harness,
+  corpus, specification, and validation policy are outside the agent's control;
+  per-candidate timeouts and the campaign deadline are enforced independently.
+- A fail-closed preflight runs before campaign state or GPU work. It validates
+  the workload, both checkouts, command identities, numeric policy, atomic
+  output writes, and free space. Less than 512 MiB is rejected and less than
+  10 GiB is warned. A write-once `run_contract.json` pins evidence identity;
+  `budget_hours` remains an extendable per-invocation allowance, and every
+  non-terminal resume receives a fresh deadline.
+- Artifact finalization consumes full-generation parity, performance, and
+  per-artifact dispatch evidence. It promotes only an improved candidate above
+  the configured threshold, rejects a measured neutral/regressed candidate,
+  and leaves incomplete evidence quarantined. Final decisions are write-once.
+- Integrated MotionKernel CPU validation completed with 685 passing and 10 GPU
+  tests deselected. A real Wan `--preflight-only` invocation passed on clean
+  MotionKernel commit `46dc94d` and FastVideo commit `50ff12ab`.
+
+### Wan V1 acceptance
+
+- SLURM job 967 ran on one GB200 and completed in 3 minutes 12 seconds. The
+  generated subgraph passed the GPU correctness harness with zero error and was
+  packaged as `wan-v1-generated-subgraph-sm100`.
+- FastVideo hash-verified and loaded the quarantined bundle, selected it for
+  `transformer.blocks`, and executed 719 candidate calls out of 719 observed
+  calls with zero runtime fallbacks. No Wan-specific runtime condition was used.
+- Native and candidate outputs were byte equal: shape `[49, 480, 832, 3]`,
+  dtype `uint8`. Native median wall time was 3.8135 seconds and candidate median
+  wall time was 3.7860 seconds, a 1.0073x speedup. Because that is below the
+  1.01 promotion threshold, the result was classified neutral.
+- The finalizer atomically recorded `rejected`, preserved the payload hashes,
+  and reverified the finished bundle. The system therefore proved dispatch and
+  correctness without turning timing noise into a claimed model improvement.
+- Job 966 never started because SLURM user-environment retrieval failed. It was
+  cancelled and replaced by job 967 with `--export=NIL`; no GPU work was lost.
+
+### Remaining proof before claiming any FastVideo model
+
+- The default Codex executable is found by preflight, but a coding-agent CLI
+  must be authenticated on the GPU worker before a genuinely autonomous
+  overnight search can run. This is an external operator prerequisite, not a
+  kernel correctness gate.
+- Wan proves the complete artifact/dispatch/finalization path. The canonical
+  LTX campaign still needs to traverse all nine stages. Its earlier dominant
+  transformer scope remained an explicit export/Dynamo graph break, so the
+  framework is V1-ready for supported captured regions but is not yet proven
+  universal across every FastVideo model.

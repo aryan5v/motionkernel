@@ -6,9 +6,8 @@ import json
 
 import pytest
 import torch
-import torch.nn as nn
+from torch import nn
 
-from autokernel.discovery.fingerprint import graph_fingerprint
 from autokernel.discovery import (
     DEFAULT_IMPACT_FLOOR,
     GraphRegion,
@@ -23,6 +22,7 @@ from autokernel.discovery import (
     rank_operators,
     rank_regions,
 )
+from autokernel.discovery.fingerprint import graph_fingerprint
 
 
 class _GatedResidual(nn.Module):
@@ -74,6 +74,92 @@ def test_rank_regions_marks_low_value_and_high_value():
     assert ranked[1].region.name == "wan.elementwise"
     assert ranked[1].search_worthy is False
     assert any("below_impact_floor" in r for r in ranked[1].rejection_reasons)
+
+
+def test_rank_regions_salvages_validated_subgraph_from_unsafe_export_parent():
+    meta = {
+        "shape": [2, 8],
+        "stride": [8, 1],
+        "dtype": "float32",
+        "device_type": "cpu",
+        "requires_grad": False,
+    }
+    region = GraphRegion.build(
+        name="transformer.blocks.exported",
+        operations=["aten::convolution", "aten::mul", "aten::add"],
+        inputs=[TensorMeta("x", (2, 8), (8, 1), "float32", "cpu")],
+        outputs=[TensorMeta("out", (2, 8), (8, 1), "float32", "cpu")],
+        cuda_time_us=8_000.0,
+        self_cuda_time_us=8_000.0,
+        calls=32,
+        rejection_reasons=("aten::convolution: not in pure-tensor allowlist",),
+        attributes={
+            "capture_mode": "export",
+            "executable_ir": {
+                "schema_version": 1,
+                "inputs": [
+                    {"id": "p0", "name": "x", "kind": "runtime", "meta": meta},
+                    {"id": "p1", "name": "gate", "kind": "runtime", "meta": meta},
+                ],
+                "nodes": [
+                    {
+                        "id": "n0",
+                        "target": "aten.convolution.default",
+                        "args": [{"ref": "p0"}],
+                        "kwargs": {},
+                        "meta": meta,
+                    },
+                    {
+                        "id": "n1",
+                        "target": "aten.mul.Tensor",
+                        "args": [{"ref": "n0"}, {"ref": "p1"}],
+                        "kwargs": {},
+                        "meta": meta,
+                    },
+                    {
+                        "id": "n2",
+                        "target": "aten.add.Tensor",
+                        "args": [{"ref": "n1"}, {"ref": "p0"}],
+                        "kwargs": {},
+                        "meta": meta,
+                    },
+                ],
+                "outputs": [{"ref": "n2"}],
+            },
+        },
+    )
+
+    candidate = rank_regions([region], total_cuda_time_us=10_000.0)[0]
+
+    assert candidate.search_worthy is True
+    assert candidate.selection_mode == "derived_subregion"
+    assert candidate.selected_node_count == 2
+    assert candidate.impact_estimate_kind == "parent_region_upper_bound"
+    assert candidate.rejection_reasons == ()
+    assert candidate.parent_rejection_reasons == (
+        "aten::convolution: not in pure-tensor allowlist",
+    )
+
+
+def test_rank_regions_keeps_unsafe_parent_rejected_when_derivation_fails():
+    region = GraphRegion.build(
+        name="transformer.blocks.invalid_export",
+        operations=["aten::convolution"],
+        inputs=[TensorMeta("x", (2, 8), (8, 1), "float32", "cpu")],
+        cuda_time_us=8_000.0,
+        self_cuda_time_us=8_000.0,
+        rejection_reasons=("aten::convolution: not in pure-tensor allowlist",),
+        attributes={"capture_mode": "export", "executable_ir": {"schema_version": 1}},
+    )
+
+    candidate = rank_regions([region], total_cuda_time_us=10_000.0)[0]
+
+    assert candidate.search_worthy is False
+    assert candidate.selection_mode == "whole_region"
+    assert any(
+        reason.startswith("safe_subregion_unavailable:SpecGenerationError")
+        for reason in candidate.rejection_reasons
+    )
 
 
 def test_parse_key_averages_rows_real_aliases():
@@ -399,10 +485,19 @@ def test_profiler_export_rejects_capture_payload_without_version_block():
 
 def test_profiler_export_rejects_unknown_capture_schema_version():
     export = _capture_export()
-    export["capture"] = {"capture_schema_version": 2}
+    export["capture"] = {"capture_schema_version": 999}
 
     with pytest.raises(ValueError, match="capture_schema_version"):
         profiler_export_to_report(export)
+
+
+def test_profiler_export_accepts_operand_aware_capture_schema():
+    export = _capture_export()
+    export["capture"]["capture_schema_version"] = 2
+
+    report = profiler_export_to_report(export)
+
+    assert len(report.regions) == 1
 
 
 def test_profiler_export_rejects_tampered_region_fingerprint():

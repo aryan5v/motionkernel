@@ -11,9 +11,10 @@ import json
 import os
 import subprocess
 import sys
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 from autokernel._io import write_json_atomic
 
@@ -23,7 +24,7 @@ from .result import (
     compare_frame_outputs,
     load_generation_result,
 )
-from .types import WorkloadError, WorkloadManifest, load_workload
+from .types import ParitySpec, WorkloadError, WorkloadManifest, load_workload
 
 DEFAULT_LAUNCHER_RELATIVE = Path(
     "examples/inference/optimizations/generation_launcher.py"
@@ -141,6 +142,7 @@ def build_launcher_command(
     mode: str,
     output_dir: Path,
     model_override: str | None = None,
+    profile_output: Path | None = None,
 ) -> list[str]:
     """Construct an argv list for one launcher process (no shell)."""
     command = [
@@ -155,6 +157,8 @@ def build_launcher_command(
     ]
     if model_override:
         command.extend(["--model", model_override])
+    if profile_output is not None:
+        command.extend(["--profile-output", str(profile_output)])
     return command
 
 
@@ -167,6 +171,7 @@ def run_mode(
     python: str | None = None,
     launcher_script: str | Path | None = None,
     model_override: str | None = None,
+    profile_output: str | Path | None = None,
     env: Mapping[str, str] | None = None,
     check: bool = True,
     timeout: float | None = None,
@@ -192,6 +197,9 @@ def run_mode(
         mode=mode,
         output_dir=Path(output_dir),
         model_override=model_override,
+        profile_output=(
+            Path(profile_output) if profile_output is not None else None
+        ),
     )
     child_env = os.environ.copy()
     if env:
@@ -349,20 +357,15 @@ def run_ab(
                 ),
             )
             parity_policy = manifest.parity
+            frame_atol, frame_rtol = (
+                parity_policy or ParitySpec()
+            ).frame_tolerances()
             parity = compare_frame_outputs(
                 results["native"].frames_path,
                 results["optimized"].frames_path,
                 policy=parity_policy.policy if parity_policy else "byte_equal",
-                atol=(
-                    parity_policy.atol
-                    if parity_policy and parity_policy.atol is not None
-                    else 0.0
-                ),
-                rtol=(
-                    parity_policy.rtol
-                    if parity_policy and parity_policy.rtol is not None
-                    else 0.0
-                ),
+                atol=frame_atol,
+                rtol=frame_rtol,
             )
             comparison["parity"] = parity
             if not parity["passed"]:

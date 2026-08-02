@@ -6,7 +6,7 @@ unknown aliasing, and unsupported custom ops are rejected before search.
 
 from __future__ import annotations
 
-from typing import Iterable, Sequence
+from collections.abc import Iterable, Sequence
 
 # Minimal pure ATen/elementwise subset useful for early LTX candidates.
 # Expand from real profile evidence, not from a desire to support all of PyTorch.
@@ -31,6 +31,7 @@ ALLOWED_ATEN_OPS: frozenset[str] = frozenset(
         "aten::layer_norm",
         "aten::rms_norm",
         "aten::native_layer_norm",
+        "aten::linear",
         "aten::to",
         "aten::clone",
         "aten::contiguous",

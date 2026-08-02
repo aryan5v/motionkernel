@@ -18,7 +18,7 @@ __all__ = [
     "write_result_atomic",
 ]
 
-RESULT_SCHEMA_VERSION = 1
+RESULT_SCHEMA_VERSION = 2
 
 
 def collect_environment_metadata(device: str) -> dict[str, Any]:

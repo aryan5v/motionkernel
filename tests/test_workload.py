@@ -112,6 +112,36 @@ def test_rejects_bad_schema_version():
         WorkloadManifest.from_dict(payload)
 
 
+@pytest.mark.parametrize("missing", ["atol", "rtol"])
+def test_tolerance_parity_requires_both_blanket_tolerances(missing):
+    payload = load_workload(WORKLOADS / "ltx_480p.yaml").as_dict()
+    payload["parity"] = {"policy": "tolerance", "atol": 1e-3, "rtol": 1e-3}
+    del payload["parity"][missing]
+    with pytest.raises(WorkloadError, match="requires explicit atol and rtol"):
+        WorkloadManifest.from_dict(payload)
+
+
+def test_byte_equal_parity_rejects_approximate_math():
+    payload = load_workload(WORKLOADS / "ltx_480p.yaml").as_dict()
+    payload["parity"]["allow_approximate_math"] = True
+    with pytest.raises(WorkloadError, match="must be false for byte_equal"):
+        WorkloadManifest.from_dict(payload)
+
+
+def test_tolerance_parity_roundtrips_approximate_math_choice():
+    payload = load_workload(WORKLOADS / "ltx_480p.yaml").as_dict()
+    payload["parity"] = {
+        "policy": "tolerance",
+        "atol": 1e-3,
+        "rtol": 2e-3,
+        "allow_approximate_math": False,
+    }
+    manifest = WorkloadManifest.from_dict(payload)
+    assert manifest.parity is not None
+    assert manifest.parity.frame_tolerances() == pytest.approx((1e-3, 2e-3))
+    assert manifest.as_dict()["parity"] == payload["parity"]
+
+
 def test_result_schema_and_classification(tmp_path):
     native = GenerationRunResult.from_dict(
         {

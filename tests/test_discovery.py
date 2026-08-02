@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-
 import pytest
 
 from autokernel.discovery import (
@@ -67,6 +65,10 @@ def test_rejects_in_place_mutation_and_invalid_region_name():
             operations=["aten::add"],
             inputs=[_tensor()],
         )
+
+
+def test_ltx_feedforward_ops_are_pure_tensor_candidates():
+    assert is_region_safe(["aten::linear", "aten::gelu", "aten::linear"])
 
 
 def test_graph_region_build_and_report_roundtrip(tmp_path):
