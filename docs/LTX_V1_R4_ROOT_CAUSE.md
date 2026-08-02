@@ -393,3 +393,41 @@ sound, but the framework contributes more of the gain than the kernel does.
 
 The candidate arm is markedly more reproducible than the baseline (stdev 0.0395
 vs 0.1675), which is itself a consequence of replaying a fixed graph.
+
+---
+
+## 9. Review findings and final confirmation (SLURM 999)
+
+Greptile flagged three further issues, all real and all fixed: a dead `if True:`
+guard left by an earlier edit; the private memory pool being released on the
+unexpected-error path but not when `_capture` itself refused (which mattered
+because the bitwise-verification step ran *after* `self._graph` was assigned,
+leaving a rejected capture published on the runner); and process-global timing
+counters with no way to clear them between sessions. The graph is now published
+only once verified.
+
+Gate 5 re-confirmed with every guard in place, 15 timed runs per arm:
+
+| | median | stdev | min |
+|---|---|---|---|
+| native | 3.7494 s | 0.1555 | 3.4689 |
+| candidate | **2.9963 s** | **0.0205** | 2.9862 |
+
+**1.2514× median, 1.1616× min-to-min.** Parity byte equal, 6143 calls, 0
+fallbacks, peak memory +4.62%.
+
+### Every paired A/B measurement taken
+
+| run | timed runs/arm | speedup | parity |
+|---|---|---|---|
+| 994 | 5 | 1.0187× | byte equal |
+| 995 | 5 | 1.0094× | byte equal |
+| 996 | 15 | 1.1703× | byte equal |
+| 997 | 15 | 1.0857× | byte equal |
+| 999 | 15 | 1.2514× | byte equal |
+
+Four of five clear the 1.01× gate; the fifth (1.0094×, a 5-run measurement) is
+within noise of it. All three 15-run measurements clear it with margin. The
+candidate arm's medians span 2.9963–3.1199s (4% spread) while the native arm's
+span 3.1457–3.7494s (19%), so the residual variance is in the baseline, not in
+the artifact path — itself a consequence of replaying a fixed graph.
