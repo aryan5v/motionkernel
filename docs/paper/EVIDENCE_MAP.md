@@ -74,9 +74,64 @@ opposite conclusion in one direction or the other.
 
 | gap | what would close it | owner |
 |---|---|---|
-| **Tier-2 promotion** -- no artifact has yet been promoted under a tier-2 budget | the caching campaign; blocked on FastVideo's `enable_teacache` being an inert flag, so the cache must be implemented in the denoising loop first | Agent 1 |
+| **Tier-2 promotion** -- no artifact has yet been promoted under a tier-2 budget | the caching threshold sweep. The blocker is cleared: a model-agnostic loop hook and its artifact runtime are merged (PR #30), so the sweep is a scripted run rather than an engineering task | next cycle |
 | **Second architecture** -- every e2e number is sm100 | the sm90 LTX A/B; the bench ran but e2e is parked on the VAE-offload memory regime | was Agent 2, now Agent 1 |
 | **Gate catch-rate** (contribution b) | a denominator from the experiment store once enough campaigns have run | — |
 | **720p attention share** | measure it on `wan-t2v-1.3b-720p` before running candidates there, as was done at 480p | Agent 1 |
 
 Nothing in this table may be written as a result until its record exists.
+
+
+---
+
+## Gap 7 -- CLOSED
+
+**Claim:** the promoted V1 LTX artifact's end-to-end speedup.
+
+**Was:** 1.0857x median with a 1.2514x replication, both measured under the
+sequential protocol that schema v3 established is ungateable on this cluster.
+
+**Now:** four paired sessions (SLURM 1082-1085), ABBA-interleaved, sustained
+warmup to a plateaued 2062 MHz clock:
+
+| job | paired speedup | dispatch |
+|---|---|---|
+| 1082 | 1.1550x | verified, 3071 candidate calls, 0 fallbacks |
+| 1083 | 1.0784x | not captured |
+| 1084 | 1.0981x | not captured |
+| **1085** | **1.0604x** | **verified, 3071 candidate calls, 0 fallbacks** |
+
+median **1.0882x**, mean 1.0980x, range 1.0604-1.1550, stdev 0.0410.
+
+**Verdict: the headline reproduces; the replication figure does not.** The
+published 1.0857x sits almost exactly on the paired median. The published
+1.2514x is above every paired session and is a high outlier of the sequential
+protocol -- the same protocol that produced 1.0274x, 1.2459x and 1.1155x for
+one dispatch measurement.
+
+**Supportable statement:** *approximately 1.09x end-to-end (four paired
+sessions, 1.06-1.16x), artifact verified dispatching on every timed run.*
+Quoting 1.2514x is not supportable and should be removed from the abstract.
+
+**Record:** `docs/dispatch-overhead/PAIRED_PROTOCOL_RESULTS.md`.
+
+## Gap 8 (new) -- between-session variance is unmodelled
+
+Sessions 1082 and 1083 have **non-overlapping** 95% CIs for the same artifact
+on the same workload, both paired, both on plateaued clocks. The bootstrap
+interval quantifies sampling error *within* a session and is silent about
+variation *between* them, which is larger.
+
+Any single session's CI therefore understates real uncertainty. Pairing
+roughly halved the spread (sequential ~15%, paired 8.9%) without removing it.
+
+**Closes when:** the protocol reports across n sessions rather than n pairs.
+Design change, not a bug; deliberately not applied mid-cycle.
+
+## Gap 3 (catch-rate) -- still open, now with a denominator forming
+
+This cycle produced four measurements that the guards correctly refused
+(SLURM 1078, 1081, 1082 false-negative, 1084) against one they admitted
+(1085). That is the beginning of the denominator gap 3 needs, and it is
+already an interesting ratio: **of six gap-7 attempts, one produced a usable
+number.**
