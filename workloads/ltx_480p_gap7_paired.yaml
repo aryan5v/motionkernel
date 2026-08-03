@@ -60,7 +60,10 @@ mode_env:
     FASTVIDEO_OPTIMIZATION_ARTIFACT_DIR: /mnt/nfs/vlm-aryan/ltx-v1-r4-targeted-fix-20260801-203751/transformer-artifacts
     FASTVIDEO_OPTIMIZATION_ARTIFACT_MODEL_ID: FastVideo/LTX2-Distilled-Diffusers
     FASTVIDEO_OPTIMIZATION_ARTIFACT_VALIDATION: "1"
-    FASTVIDEO_OPTIMIZATION_ARTIFACT_ENABLE: "1"
+    # NOT set: FASTVIDEO_OPTIMIZATION_ARTIFACT_ENABLE is an artifact
+    # *selection filter*, not a boolean. Setting it to "1" means "admit only
+    # the artifact named 1", which admitted 0 of 1 bundles and ran natively
+    # (SLURM 1081). Leaving it unset admits every verified bundle in the dir.
     # Fixed path so the runner can read candidate_calls back and assert the
     # artifact actually dispatched before any timing is interpreted.
     FASTVIDEO_OPTIMIZATION_ARTIFACT_DIAGNOSTICS: /mnt/nfs/vlm-aryan/gap7v2-dispatch.json
