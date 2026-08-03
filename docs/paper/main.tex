@@ -319,6 +319,40 @@ success. Our rule since: status vocabulary is closed and tested, reasons
 must quote the evidence they summarize, and any prompt field that can be
 unset fails preflight rather than interpolating \texttt{None}.
 
+\subsection{The null intervention: measuring nothing with high confidence}
+
+The most instructive failure arrived while re-validating our own headline
+result under a stricter measurement protocol. The paired A/B returned
+$0.9011\times$ for the promoted transformer artifact, with a bootstrap CI
+of $[0.868, 0.920]$ excluding $1.0$, a significant Wilcoxon test, a clean
+plateaued clock trace, and \texttt{valid\_for\_gating: true}. Read
+naively, this retracts the project's principal positive result. It
+measures nothing: the candidate arm configured the artifact directory
+through an environment variable that the FastVideo checkout in use never
+reads. Every variable was inert; no artifact was selected; zero candidate
+calls appear in the log. \emph{Both arms ran the native model}, and every
+check the protocol performed---statistical, environmental,
+procedural---passed, because none of them asked whether the intervention
+under test had actually happened.
+
+This was the third appearance of one meta-failure at a third layer: an
+attention selector that silently substitutes the fallback backend on
+\texttt{ImportError} (so a campaign measures FlashAttention twice under
+another backend's name), a caching flag that is accepted and consumed by
+nothing, and now configuration read by no code path. The general form:
+\textbf{in a system with graceful fallbacks, the absence of an
+intervention is silent, and statistics cannot distinguish ``no effect''
+from ``no experiment.''} The structural remedy is that every artifact
+kind must declare a \emph{positive differentiation signal}---candidate
+dispatch count, effective-backend echo, cache-hit count---and a
+measurement whose arms show no such signal is invalidated
+(\texttt{arms\_differentiated = false}) before its timings are read. We
+note with some discomfort that we had already built exactly this guard
+for attention backends, and described its rationale at length, before
+reproducing the failure one layer down; defense in depth against this
+class evidently must be a property of the platform's artifact registry,
+not of individual campaign authors remembering the lesson.
+
 \subsection{Failures caught by gates versus failures caught by tooling}
 
 Of the defects above, the layout violation and the guard bypass were

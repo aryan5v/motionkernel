@@ -75,6 +75,16 @@ Status: ✅ committed on main · 🔀 on an unmerged branch · ⏳ pending campa
 | Author-published VSA numbers corrected via store ingest | job-log vs ingested record | experiment-store PR | 🔀 |
 | Amdahl ceiling for wan-480p attention | 1.373–1.537x | same records | 🔀 |
 
+## §6 — null intervention incident (job 1078)
+
+| claim | value | record | status |
+|---|---|---|---|
+| Paired A/B reported 0.9011x, CI [0.868, 0.920], conclusive, valid clock trace — with both arms native | job 1078 | paired-protocol measurement record + run log (zero candidate calls) | ✅ (commit the record + log excerpt) |
+| Candidate arm env vars inert (checkout reads only FASTVIDEO_OPTIMIZATION_CAPTURE) | code inspection | FastVideo checkout identity in the record | ✅ |
+| Guard added: arms_differentiated=false invalidates before timings are read | schema change | paired-protocol PR | 🔀 |
+| Paired vs sequential agreement where CV was already low (gap 5) | 0.8106x [0.8091, 0.8111] vs 0.8031x | jobs 1077/1078-adjacent records | ✅ |
+| Warmup reaches and holds max boost without clock locking | 2062 MHz held through timed runs; plateau 77 s / 93 s | clock traces in v3 records | ✅ |
+
 ## §8 additions — measurement validity
 
 | claim | value | record | status |
@@ -97,8 +107,16 @@ Status: ✅ committed on main · 🔀 on an unmerged branch · ⏳ pending campa
    predates clock locking; cheap to redo, strengthens T1.
 6. **720p attention share** — unmeasured; decides whether attention
    round 2 is worth its budget and appears in §7's regime analysis.
-7. **V1 LTX headline re-validation** — the 1.0857x median and 1.2514x
-   replication were measured under the sequential protocol now proven
-   ungateable on this cluster (see §8 additions). They must be re-measured
-   under the paired/interleaved protocol before the paper leads with
-   them. Until then the prose must not present them as gated results.
+7. **V1 LTX headline re-validation** — STILL OPEN, now with a documented
+   near-false-retraction: job 1078's 0.9011x is a null-intervention
+   measurement (both arms native; see the §6 incident section above) and
+   must never be cited as a re-validation result. Closing this gap
+   requires the `agent/v1-r4-dispatch-fix` FastVideo checkout with
+   `candidate_calls > 0` asserted before timings are read (the original
+   proof's gate 3), under the paired protocol with
+   `arms_differentiated=true`. Until then the 1.0857x/1.2514x numbers
+   stay flagged in the abstract and are not presented as gated results.
+8. **Gap 5 (Wan paired re-run) — CLOSED** for the attention A/B: paired
+   0.8106x, CI [0.8091, 0.8111], agrees with sequential 0.8031x within
+   1% at native CV 0.04%. Link the record in §8's protocol discussion as
+   the "pairing changes nothing where there is no drift" data point.
