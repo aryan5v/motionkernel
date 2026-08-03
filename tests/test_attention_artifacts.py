@@ -112,6 +112,8 @@ def test_a_new_kind_can_be_registered_without_touching_validation() -> None:
             required=frozenset({"threshold"}),
             replaces_region=False,
             description="a test kind",
+            # Required of every kind: how a harness would know it ran.
+            execution_signal="test_only.invocations > 0",
         )
     )
     spec = validate_kind_fields("test_only_kind", {"threshold": 0.4})
@@ -417,4 +419,39 @@ def test_finalizing_refuses_a_backend_the_bundle_did_not_declare(tmp_path) -> No
                 attention_declared="VIDEO_SPARSE_ATTN",
                 attention_effective="VIDEO_SPARSE_ATTN",
             ),
+        )
+
+
+# -- execution signals are a registration requirement --------------------
+
+
+def test_every_registered_kind_declares_how_you_would_know_it_ran() -> None:
+    """A kind without an execution signal admits phantom measurements.
+
+    SLURM 1078 produced a tight, conclusive, apparently-valid 0.9011x for an
+    artifact that never dispatched. Every check the measurement had passed;
+    none asked whether the intervention happened.
+    """
+    from autokernel.artifact.kinds import execution_signal_for, known_target_kinds
+
+    for kind in known_target_kinds():
+        signal = execution_signal_for(kind)
+        assert signal, f"{kind} declares no execution signal"
+
+
+def test_a_kind_without_an_execution_signal_cannot_be_registered() -> None:
+    from autokernel.artifact.kinds import TargetKind, register_target_kind
+
+    with pytest.raises(ValueError, match="must declare an execution_signal"):
+        register_target_kind(TargetKind(name="signalless_kind"))
+
+
+def test_the_signals_name_something_a_harness_can_evaluate() -> None:
+    """Not prose: each signal names a counter or an echo, and a comparison."""
+    from autokernel.artifact.kinds import execution_signal_for, known_target_kinds
+
+    for kind in known_target_kinds():
+        signal = execution_signal_for(kind)
+        assert any(op in signal for op in (">", "==")), (
+            f"{kind}: {signal!r} is not checkable"
         )

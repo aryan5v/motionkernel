@@ -39,6 +39,7 @@ __all__ = [
     "SCHEDULE_TRANSFORM",
     "SUBGRAPH",
     "TargetKind",
+    "execution_signal_for",
     "known_target_kinds",
     "register_target_kind",
     "target_kind_spec",
@@ -53,6 +54,22 @@ SCHEDULE_TRANSFORM = "schedule_transform"
 @dataclass(frozen=True)
 class TargetKind:
     """The shape of one artifact kind's operation identity.
+
+    Every kind must declare an ``execution_signal``: the observable proof that
+    its artifact did something. This is a registration requirement rather than
+    a convention because of a specific incident. A paired A/B of the promoted
+    V1 LTX artifact (SLURM 1078) returned 0.9011x with a tight confidence
+    interval, a significant p-value, ``conclusive: true`` and a clean clock
+    trace -- an apparent retraction of the project's headline. It measured
+    nothing: the checkout read only ``FASTVIDEO_OPTIMIZATION_CAPTURE``, so
+    every artifact variable was inert and both arms ran native.
+
+    Every check the measurement had passed. None asked whether the
+    intervention happened. The same shape had already bitten attention
+    campaigns, where FastVideo silently substitutes FlashAttention and the
+    fallback gets recorded under the requested backend's name.
+
+    So a kind that cannot say how you would *know* it ran is not registrable.
 
     Args:
         name: the value that appears as ``operation.target_kind``.
@@ -73,6 +90,10 @@ class TargetKind:
     optional: frozenset[str] = field(default_factory=frozenset)
     replaces_region: bool = True
     description: str = ""
+    #: The positive evidence that this kind's artifact actually executed --
+    #: a counter or echo the runtime emits, named here so a measurement can be
+    #: checked rather than assumed. See the class docstring.
+    execution_signal: str = ""
 
     @property
     def permitted(self) -> frozenset[str]:
@@ -90,6 +111,13 @@ def register_target_kind(kind: TargetKind) -> TargetKind:
     """
     if kind.name in _REGISTRY:
         raise ValueError(f"target kind {kind.name!r} is already registered")
+    if not kind.execution_signal:
+        raise ValueError(
+            f"target kind {kind.name!r} must declare an execution_signal: the "
+            f"observable proof its artifact actually ran. A kind without one "
+            f"admits measurements of interventions that never happened "
+            f"(see the class docstring)."
+        )
     _REGISTRY[kind.name] = kind
     return kind
 
@@ -108,6 +136,7 @@ register_target_kind(
     TargetKind(
         name=MODULE,
         description="replaces a whole module's forward",
+        execution_signal="dispatch.candidate_calls > 0",
     )
 )
 
@@ -119,6 +148,7 @@ register_target_kind(
             {"selected_node_ids", "boundary_refs", "output_node_ids"}
         ),
         description="rewrites selected nodes inside a captured region",
+        execution_signal="dispatch.candidate_calls > 0",
     )
 )
 
@@ -129,6 +159,7 @@ register_target_kind(
         optional=frozenset({"attention_config"}),
         replaces_region=False,
         description="selects an attention backend implementation",
+        execution_signal="effective_backend == declared attention_backend",
     )
 )
 
@@ -139,6 +170,7 @@ register_target_kind(
         required=frozenset({"transform_family", "transform_policy"}),
         replaces_region=False,
         description="wraps the denoising loop and may skip steps",
+        execution_signal="loop_transform.steps_skipped + hook_invocations > 0",
     )
 )
 
@@ -214,3 +246,16 @@ def validate_kind_fields(
             f"to no registered kind"
         )
     return spec
+
+
+def execution_signal_for(kind_name: str) -> str:
+    """The observable proof that ``kind_name``'s artifact actually ran.
+
+    Used by measurement harnesses to decide what to assert before interpreting
+    any timing. A harness that cannot evaluate the signal should treat the arms
+    as undifferentiated rather than assume they differed.
+    """
+    spec = target_kind_spec(kind_name)
+    if spec is None:
+        raise ValueError(f"unknown target_kind {kind_name!r}")
+    return spec.execution_signal
