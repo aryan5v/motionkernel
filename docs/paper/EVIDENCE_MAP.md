@@ -107,15 +107,29 @@ Status: ✅ committed on main · 🔀 on an unmerged branch · ⏳ pending campa
    predates clock locking; cheap to redo, strengthens T1.
 6. **720p attention share** — unmeasured; decides whether attention
    round 2 is worth its budget and appears in §7's regime analysis.
-7. **V1 LTX headline re-validation** — STILL OPEN, now with a documented
-   near-false-retraction: job 1078's 0.9011x is a null-intervention
-   measurement (both arms native; see the §6 incident section above) and
-   must never be cited as a re-validation result. Closing this gap
-   requires the `agent/v1-r4-dispatch-fix` FastVideo checkout with
-   `candidate_calls > 0` asserted before timings are read (the original
-   proof's gate 3), under the paired protocol with
-   `arms_differentiated=true`. Until then the 1.0857x/1.2514x numbers
-   stay flagged in the abstract and are not presented as gated results.
+7. **V1 LTX headline — RESTATED (finalization pends job 1085).** Outcome:
+   neither confirmed at original precision nor retracted. Three paired
+   sessions reproduce the speedup in direction and magnitude:
+   | session | paired speedup | CI | dispatch evidence |
+   |---|---|---|---|
+   | job 1082 | 1.1550x | [1.123, 1.187] | verified: 3,071 calls, 0 fallbacks |
+   | job 1083 | 1.0784x | [1.051, 1.103] | ⚠ confirm from logs or demote to directional |
+   | job 1084 | 1.0981x | [0.995, 1.201] | ⚠ confirm from logs or demote to directional |
+   | job 1085 | ⏳ | ⏳ | to be verified |
+   Reported claim: cross-session range ≈1.08–1.16x; single-session
+   precision (including the original 1.0857x and 1.2514x) is not
+   supportable — 1082 and 1083 have non-overlapping CIs, so
+   within-session bootstrap CIs understate real uncertainty. Job 1078's
+   0.9011x remains a null-intervention measurement and must never be
+   cited. Remaining actions: (a) commit 1082–1085 records + log
+   excerpts, (b) resolve the two ⚠ rows, (c) prose in main.tex §8 /
+   abstract already written to the restatement — update the table's
+   pending row when 1085 lands.
+   **Methodology finding for §8 (evidenced by 1082 vs 1083):** the
+   session, not the pair, is the unit of replication; pairing halved
+   cross-session spread (~15% sequential → ~7% paired) without removing
+   it. Protocol's missing multi-session requirement recorded as a
+   limitation, deliberately not patched mid-measurement.
 8. **Gap 5 (Wan paired re-run) — CLOSED** for the attention A/B: paired
    0.8106x, CI [0.8091, 0.8111], agrees with sequential 0.8031x within
    1% at native CV 0.04%. Link the record in §8's protocol discussion as

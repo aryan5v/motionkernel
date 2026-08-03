@@ -45,11 +45,14 @@ numeric, perceptual), we evaluate approximate optimizations honestly: two
 published attention methods lose to a tuned FlashAttention baseline in
 this regime ($0.80\times$ and $0.52\times$) while structural and
 perceptual quality metrics systematically disagree about them. One
-transformer artifact was promoted end to end ($1.086\times$ median,
-byte-identical frames, $6{,}143$ dispatches, zero fallbacks).
-% GAP 7 (EVIDENCE_MAP): the 1.086x median and the 1.2514x replication
-% predate the paired measurement protocol. Re-validate before submission
-% or reword to carry the Section 8 protocol caveat.
+transformer artifact was promoted end to end (byte-identical frames,
+verified dispatch, zero fallbacks); re-validation across multiple paired
+sessions reproduces its speedup in direction and magnitude
+($\approx 1.08$--$1.16\times$) while revealing that any single session's
+confidence interval---including our own originally published
+$1.0857\times$---overstates the measurement's real precision, because
+session-to-session variation exceeds within-session sampling error.
+% GAP 7: final numbers pend job 1085's verified record; see Section 8.
 Every number in this paper traces to a
 committed, machine-generated measurement record. We argue this promotion
 layer---not kernel generation itself---is the missing infrastructure for
@@ -742,6 +745,25 @@ under both gives $0.8106\times$ [$0.8091, 0.8111$] paired against
 $0.8031\times$ sequential at 0.04\% native CV
 (Figure~\ref{fig:protocol}).
 
+The paired protocol then taught us its own limitation. Repeating the
+same artifact A/B across sessions---each run paired, interleaved, and on
+plateaued clocks---produced estimates whose bootstrap intervals do not
+overlap: $1.1550\times$ [$1.123, 1.187$] and $1.0784\times$
+[$1.051, 1.103$] for the identical intervention on the identical
+workload. The bootstrap CI quantifies sampling error \emph{within} one
+session and is silent about variation \emph{between} sessions, which is
+evidently larger; a single run's interval therefore reads far tighter
+than the measurement's real uncertainty. Pairing halved the spread
+relative to the sequential protocol ($\sim 15\%$ across sequential
+sessions to $\sim 7\%$ across paired ones) without removing it. The
+consequence is a reporting rule we adopt for every gated number:
+\textbf{the session, not the pair, is the unit of replication}---a
+speedup claim requires multiple paired sessions and is reported as a
+cross-session range or aggregate, never as one session's interval. We
+record the protocol's lack of a built-in multi-session requirement as a
+design gap discovered by use, deliberately not patched mid-measurement
+(Section~\ref{sec:limitations}).
+
 \begin{figure}[t]
 \centering
 \fbox{\pending{F7: clock trace + paired vs sequential comparison (FIGURES.md)}}
@@ -752,18 +774,44 @@ this paper retracts.}
 \label{fig:protocol}
 \end{figure}
 
-\paragraph{The promoted artifact.}
-\pending{GAP 7 decides this paragraph. Written for the confirm case;
-rewrite honestly if it retracts. The promoted LTX2 transformer artifact:
-original evidence $3.3646 \to 3.0991$\,s median ($1.0857\times$) over a
-15-run A/B, independent replication $1.2514\times$, $6{,}143$ dispatches,
-zero fallbacks, byte-identical frames --- re-validated under the paired
-protocol with candidate\_calls asserted:
-[paired delta, CI, arms\_differentiated=true, job ID].}
+\paragraph{The promoted artifact: a restatement, not a retraction.}
+The promoted LTX2 transformer artifact's original evidence---%
+$3.3646 \to 3.0991$\,s median ($1.0857\times$) over a sequential 15-run
+A/B, with an independent sequential replication of $1.2514\times$,
+byte-identical frames, and verified dispatch with zero fallbacks---was
+re-validated under the paired protocol across three sessions:
+
+\begin{table}[h]
+\centering
+\caption{Paired re-validation sessions for the promoted LTX2 transformer
+artifact. Job 1082's dispatch is fully verified ($3{,}071$ candidate
+calls, zero fallbacks); \pending{confirm arms differentiation for
+1083/1084 from logs, or demote them to directional support. Final table
+pends job 1085's verified record.}}
+\label{tab:revalidation}
+\begin{tabular}{lrl}
+\toprule
+Session & Paired speedup & Bootstrap CI \\
+\midrule
+job 1082 & $1.1550\times$ & $[1.123, 1.187]$ \\
+job 1083 & $1.0784\times$ & $[1.051, 1.103]$ \\
+job 1084 & $1.0981\times$ & $[0.995, 1.201]$ \\
+\pending{job 1085} & & \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The honest conclusion has two parts. The speedup is real: every session
+reproduces it in direction, and the cross-session range
+($\approx 1.08$--$1.16\times$) brackets the original claim. The original
+\emph{precision} is not supportable: quoting any single session to three
+decimals---ours included---overstates certainty, since sessions 1082 and
+1083 exclude each other's intervals. The headline this project now
+reports is the cross-session range with per-session records attached.
 The first re-validation attempt is itself a result: it produced a
 conclusive-looking $0.9011\times$ that measured nothing
-(Section~\ref{sec:taxonomy}), and the guard it motivated is now a
-precondition for every number in this section.
+(Section~\ref{sec:taxonomy}), and the differentiation guard it motivated
+is a precondition for every row of Table~\ref{tab:revalidation}.
 
 \paragraph{Support matrix.}
 Support claims are generated from evidence, never asserted: a model
@@ -802,7 +850,13 @@ we have not demonstrated cross-framework portability of promoted
 artifacts. Perceptual gates inherit the limitations of their metrics:
 Section~\ref{sec:tiers} shows SSIM and LPIPS disagreeing systematically,
 and our conjunction gate is conservative rather than validated against
-human judgment. The autonomous-search economics (token cost per promoted
+human judgment. The paired protocol
+lacks a built-in multi-session requirement: we discovered by use that
+within-session confidence intervals understate real uncertainty
+(Section~\ref{sec:results}) and adopted cross-session reporting as
+policy, but the protocol schema does not yet enforce a minimum session
+count, and our cross-session ranges are built from small numbers of
+sessions. The autonomous-search economics (token cost per promoted
 artifact) are observed but not systematically studied---several of our
 strongest results required no LLM search at all, which is itself a
 finding about where such search is worth buying. Finally, our negative
