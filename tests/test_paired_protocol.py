@@ -320,3 +320,32 @@ def test_an_unsamplable_clock_is_not_recorded_as_settled() -> None:
     )
     assert result.plateaued is False
     assert "could not be sampled" in result.reason
+
+
+def test_undifferentiated_arms_are_invalid() -> None:
+    """A candidate arm whose configuration never took effect measures nothing.
+
+    This is the failure that nearly published a retraction of the V1 LTX
+    headline: SLURM 1078 set FASTVIDEO_OPTIMIZATION_ARTIFACT_DIR on the
+    candidate arm, but that FastVideo checkout reads only
+    FASTVIDEO_OPTIMIZATION_CAPTURE, so both arms ran native. The result was
+    tight, conclusive, and about nothing.
+    """
+    result = summarize_paired(
+        [10.0] * 6, [11.0] * 6,
+        schedule=interleaved_schedule(6),
+        clock_trace=[{"sm_clock_mhz": 2000}],
+        arms_differentiated=False,
+    )
+    assert result.valid_for_gating is False
+    assert any("not observably different" in r for r in result.invalid_reasons)
+
+
+def test_differentiated_arms_stay_valid() -> None:
+    result = summarize_paired(
+        [10.0] * 6, [9.0] * 6,
+        schedule=interleaved_schedule(6),
+        clock_trace=[{"sm_clock_mhz": 2000}],
+        arms_differentiated=True,
+    )
+    assert result.valid_for_gating is True

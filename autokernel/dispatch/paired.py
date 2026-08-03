@@ -306,6 +306,7 @@ def summarize_paired(
     schedule: Sequence[str] | None = None,
     clock_trace: Sequence[Any] | None = None,
     require_clock_trace: bool = True,
+    arms_differentiated: bool | None = None,
 ) -> PairedResult:
     """Analyse an interleaved A/B and decide whether it may gate.
 
@@ -342,6 +343,17 @@ def summarize_paired(
         reasons.append(
             "clock trace absent; no evidence the sustained-load warmup reached "
             "a plateau before timing began"
+        )
+    if arms_differentiated is False:
+        # The arms were not observably different, so whatever was measured, it
+        # was not the thing under test. This is the same failure the attention
+        # effective-backend check exists for, one level up: a candidate arm
+        # whose configuration silently did not take effect produces a clean,
+        # tight, conclusive number for an intervention that never happened.
+        reasons.append(
+            "the candidate arm was not observably different from native; the "
+            "intervention under test did not take effect, so this measures "
+            "something else"
         )
 
     median_ratio = statistics.median(ratios)
