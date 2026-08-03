@@ -7,6 +7,19 @@ produces the evidence, :func:`attribute_overhead` and
 """
 
 from .controls import DEFAULT_CV_CEILING, capture_controls, variance_block
+from .paired import (
+    MEASUREMENT_SCHEMA_VERSION_PAIRED,
+    PROTOCOL_PAIRED,
+    PROTOCOL_SEQUENTIAL,
+    PairedResult,
+    ProtocolError,
+    bootstrap_median_ci,
+    interleaved_schedule,
+    paired_speedups,
+    summarize_paired,
+    wilcoxon_signed_rank_p,
+)
+from .warmup import WarmupResult, clock_plateaued, sustained_warmup
 from .measure import (
     MEASUREMENT_SCHEMA,
     MEASUREMENT_SCHEMA_VERSION,
@@ -31,6 +44,19 @@ from .overhead import (
 )
 
 __all__ = [
+    "wilcoxon_signed_rank_p",
+    "sustained_warmup",
+    "summarize_paired",
+    "paired_speedups",
+    "interleaved_schedule",
+    "clock_plateaued",
+    "bootstrap_median_ci",
+    "WarmupResult",
+    "ProtocolError",
+    "PairedResult",
+    "PROTOCOL_SEQUENTIAL",
+    "PROTOCOL_PAIRED",
+    "MEASUREMENT_SCHEMA_VERSION_PAIRED",
     "BreakEvenPoint",
     "DEFAULT_CALL_VOLUMES",
     "DEFAULT_CV_CEILING",
