@@ -82,3 +82,87 @@ ungateable on this cluster, and three sequential runs of the same dispatch
 measurement reported 1.0274x, 1.2459x and 1.1155x.
 
 **Neither confirmed nor retracted. Not measured.**
+
+---
+
+## Gap 7, resolved: the headline reproduces, the replication figure does not
+
+Six attempts. Two were real discoveries about the system, four were harness
+plumbing; both counts are recorded in the cycle summary because the ratio is
+the useful part.
+
+### What blocked it
+
+| attempt | failure | what it would have reported |
+|---|---|---|
+| 1078 | wrong FastVideo checkout -- reads only `FASTVIDEO_OPTIMIZATION_CAPTURE`, every artifact variable inert | **0.9011x** -- "headline retracted" |
+| 1081 | `ARTIFACT_ENABLE` is an artifact *selection filter*, not a boolean; `"1"` asked for an artifact named `1` and admitted 0 of 1 bundles | **1.0426x** -- "reproduces, inconclusive" |
+| 1082 | dispatched correctly; harness read diagnostics before the worker flushed them | 1.1550x marked invalid -- a **false negative** |
+| 1083-1084 | in-process retry cannot work (flush happens after `main()` returns); then a path mismatch | inconclusive |
+| **1085** | -- | **verified** |
+
+1078 and 1081 produced *opposite* wrong answers from the same non-event.
+Whichever had been run once would have been believed.
+
+1082 matters in the other direction: a check that discards a real result
+teaches people to disable it. `valid_for_gating: false` has to be both rare and
+right.
+
+### The verified record
+
+SLURM 1085, `agent/v1-r4-dispatch-fix @ 7299cc9a`, artifact
+`mk-2c92e356aa34bc0d-7df21b47-sm100`:
+
+```
+candidate_calls  3071
+runtime_fallbacks   0
+differentiated   True
+valid_for_gating True
+```
+
+### Four paired sessions
+
+| job | paired speedup | 95% CI | dispatch |
+|---|---|---|---|
+| 1082 | 1.1550x | [1.123, 1.187] | verified (3071 calls) |
+| 1083 | 1.0784x | [1.051, 1.103] | not captured |
+| 1084 | 1.0981x | [0.995, 1.201] | not captured |
+| **1085** | **1.0604x** | [0.995, 1.232] | **verified (3071 calls)** |
+
+median **1.0882x**, mean 1.0980x, range 1.0604-1.1550 (**8.9% spread**),
+stdev 0.0410.
+
+### The verdict
+
+**The V1 headline reproduces. The replication figure does not.**
+
+The published median was **1.0857x**, which sits almost exactly on the paired
+median of **1.0882x**. That is a reproduction, under a protocol designed to
+break sequential measurements.
+
+The published replication of **1.2514x** is **above every one of the four
+paired sessions**. It should be read as a high outlier of the sequential
+protocol -- the same protocol that produced 1.0274x, 1.2459x and 1.1155x for
+one dispatch measurement -- not as a second independent confirmation.
+
+Recommended statement: *the promoted V1 LTX artifact delivers approximately
+1.09x end-to-end (four paired sessions, 1.06-1.16x), with the artifact verified
+to dispatch on every timed run.* Quoting 1.2514x is not supportable.
+
+### A limitation the data forced, not a bug
+
+Sessions 1082 and 1083 have **non-overlapping** confidence intervals for the
+same artifact on the same workload -- both paired, both ABBA, both on plateaued
+2062 MHz clocks.
+
+The bootstrap CI quantifies sampling error *within* one session and is silent
+about variation *between* them, which is evidently larger. A single session's
+interval therefore understates real uncertainty, and 1082's tight
+[1.123, 1.187] is misleading read alone.
+
+Pairing still helped: sequential spread was ~15% (1.0857 vs 1.2514), paired is
+8.9%. It roughly halved the variance without removing it.
+
+**The protocol needs n sessions, not just n pairs.** That is a design change,
+not a fix, and it is recorded here rather than applied mid-cycle -- this cycle
+has already demonstrated what editing the harness between runs costs.
