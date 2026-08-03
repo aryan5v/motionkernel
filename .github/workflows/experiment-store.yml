@@ -1,0 +1,32 @@
+name: Experiment store
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  records-ingest:
+    name: Every committed measurement record ingests cleanly
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Install dependencies
+        run: uv sync --extra dev
+      # A record that stops ingesting is a source schema that changed without
+      # its reader. Caught here rather than discovered as a gap in the store
+      # months later, when the run that produced it is long gone.
+      - name: Check records ingest
+        run: uv run python -m autokernel.store check docs/
+      - name: Store unit tests
+        run: uv run python -m pytest tests/test_experiment_store.py -q
