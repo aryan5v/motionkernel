@@ -8,13 +8,15 @@
 \usepackage{hyperref}
 \usepackage{xcolor}
 \newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
+\newcommand{\pending}[1]{\textcolor{blue}{[PENDING DATA: #1]}}
 % Every number below must match docs/paper/EVIDENCE_MAP.md. Do not edit a
-% number here without updating the map first.
+% number here without updating the map first. \pending{} marks slots that
+% wait on named campaigns; \todo{} marks writing work.
 
 \title{The Promotion Gap: Verified End-to-End Deployment of\\
-Agent-Generated GPU Optimizations for Video Diffusion Inference}
-\author{Aryan \todo{full author list and affiliations}\\
-\todo{acknowledge agent tooling in Acknowledgments, not authorship}}
+Agent-Generated GPU Optimizations\\
+\large A Case Study in Video Diffusion Inference}
+\author{Aryan \todo{full author list and affiliations}}
 \date{August 2026}
 
 \begin{document}
@@ -35,15 +37,16 @@ $1.0064\times$; and the delivery mechanism itself charged $3.104$\,ms per
 call to realize a $124$\,\textmu s saving---a $25{:}1$ dispatch tax
 consuming $32.4\%$ of end-to-end time before we eliminated it. Independent
 validation caught agent-generated kernels that were bit-exact yet compiled
-one call's memory layout in as constants, and dispatch code that silently
-bypassed compiler guards to report an unfair $2.557\times$. Extending the
-gates with tiered fidelity contracts (bitwise, numeric, perceptual), we
-evaluate approximate optimizations honestly: two published attention
-methods lose to a tuned FlashAttention baseline in this regime
-($0.80\times$ and $0.52\times$) while structural and perceptual quality
-metrics systematically disagree about them. One transformer artifact was
-promoted end to end ($1.086\times$ median, byte-identical frames, $6{,}143$
-dispatches, zero fallbacks).
+one call's memory layout in as constants, dispatch code that silently
+bypassed compiler guards to report an unfair $2.557\times$, and a
+statistically conclusive A/B in which the intervention under test never
+executed. Extending the gates with tiered fidelity contracts (bitwise,
+numeric, perceptual), we evaluate approximate optimizations honestly: two
+published attention methods lose to a tuned FlashAttention baseline in
+this regime ($0.80\times$ and $0.52\times$) while structural and
+perceptual quality metrics systematically disagree about them. One
+transformer artifact was promoted end to end ($1.086\times$ median,
+byte-identical frames, $6{,}143$ dispatches, zero fallbacks).
 % GAP 7 (EVIDENCE_MAP): the 1.086x median and the 1.2514x replication
 % predate the paired measurement protocol. Re-validate before submission
 % or reword to carry the Section 8 protocol caveat.
@@ -107,17 +110,18 @@ compiled in as constants, and dispatch code that silently bypassed
 \texttt{torch.compile}'s guards to report a $2.557\times$ speedup its
 guarded equivalent could not reproduce (Section~\ref{sec:taxonomy}). We
 also caught ourselves: the pipeline's own impact attribution over-counted
-a dispatch chain $4\times$, and an author-published number was corrected
-when the experiment store ingested the underlying records. We therefore
-treat machine-checked claims not as reproducibility hygiene but as a
-load-bearing component of the system.
+a dispatch chain $4\times$, an author-published number was corrected when
+the experiment store ingested the underlying records, and a re-validation
+A/B produced a tight, statistically significant result while both arms
+ran the unmodified model. We therefore treat machine-checked claims not
+as reproducibility hygiene but as a load-bearing component of the system.
 
 This paper makes the following contributions:
 \begin{enumerate}
 \item A fail-closed promotion pipeline for agent-generated optimizations,
   from declarative workloads and metadata-only graph capture through
   sandboxed autonomous search, independent validation, versioned
-  artifacts, and full-generation A/B promotion (Section~3).
+  artifacts, and full-generation A/B promotion (Section~\ref{sec:system}).
 \item A quantified account of the promotion gap: isolated operator
   speedup does not predict shipped value, and measured per-artifact
   impact must replace analytical upper bounds, which overstated one
@@ -126,38 +130,194 @@ This paper makes the following contributions:
   overhead per call, the $25{:}1$ result it produced, and the measured
   elimination of that overhead (Section~\ref{sec:dispatch}).
 \item A failure taxonomy of agent-generated performance code, drawn from
-  artifacts our gates caught, with the checks that caught them
-  (Section~\ref{sec:taxonomy}).
+  artifacts our gates caught, with the checks that caught them---including
+  the \emph{null intervention}, a conclusive measurement of an experiment
+  that never ran (Section~\ref{sec:taxonomy}).
 \item Tiered fidelity contracts (bitwise, numeric, perceptual) that admit
   approximate optimizations without abandoning verification, and honest
   campaign results under them, including systematic disagreement between
   SSIM and LPIPS (Section~\ref{sec:tiers}).
-\item End-to-end results and measurement methodology, including a
-  promoted transformer artifact ($1.086\times$ median, byte-identical
-  frames, $6{,}143$ dispatches, zero fallbacks) and an invalidation
-  policy under which we retracted three of our own previously reported
-  numbers when node-level variance proved sequential A/B measurement
-  ungateable on our cluster (Section~\ref{sec:results}).
+\item End-to-end results and measurement methodology for shared clusters
+  without clock control: a paired, interleaved protocol with
+  machine-checked validity bits, under which we retracted three of our
+  own previously reported numbers (Section~\ref{sec:results}).
 \end{enumerate}
 
 We release the system, every workload manifest, and the machine-generated
 measurement record behind every number in this paper.
 
 \section{Background and Related Work}
-\todo{(a) LLM/agent kernel generation and its isolated-metric evaluation
-practice; (b) video DiT inference cost structure; (c) acceleration
-families: sparse/quantized attention, step caching, compilation and
-megakernels; (d) why existing evaluation does not measure shipped value.}
+\label{sec:related}
+
+\paragraph{Automated kernel generation and its evaluation.}
+Benchmarks such as KernelBench~\cite{kernelbench2025} and
+KernelGenBench~\cite{kernelgenbench2026} score language models on
+generating kernels for fixed problems, measuring correctness on sampled
+inputs and speedup over a reference at fixed shapes; agentic systems
+extend one-shot generation with iterative refinement, evolutionary
+search, and speculative candidate generation~\cite{specgen2026}. This
+evaluation regime embeds three assumptions that our results contradict:
+that replaying captured inputs suffices to establish correctness
+(Section~\ref{sec:taxonomy} shows a bit-exact kernel wrong for every
+input layout but the captured one); that isolated speedup predicts
+delivered value (Section~\ref{sec:gap} shows correlations near zero in a
+production model); and that the measurement harness is neutral
+(Section~\ref{sec:taxonomy} shows an agent optimizing the harness
+boundary itself). We do not argue against these benchmarks---they
+measure generation ability---but against reading their metric as
+deployment evidence.
+
+\paragraph{Accelerating video diffusion inference.}
+Video diffusion transformers spend their time in repeated denoising steps
+over long token sequences, making them a target for attention
+approximation---sliding tile attention~\cite{sta2025}, trainable video
+sparse attention~\cite{vsa2025}, training-free sparse
+attention~\cite{spargeattn2025}, and quantized attention at INT8 through
+FP4~\cite{sageattention2024,sageattention3}---and for cross-step reuse:
+input-similarity caching such as TeaCache~\cite{teacache2024} and its
+successors~\cite{d2cache2026}. Each technique ships with its own
+evaluation on its own workloads, with heterogeneous quality metrics and,
+typically, no shared notion of when a result is deployment-ready. Our
+contribution is orthogonal: not a new approximation, but the promotion
+substrate that evaluates any of them under a declared fidelity budget on
+a declared workload---and our negative results
+(Section~\ref{sec:tiers}) demonstrate why regime sensitivity makes such
+a substrate necessary: methods with real published wins lose outright
+under a well-tuned baseline in a regime their papers do not test.
+
+\paragraph{Compilation and delivery.}
+\texttt{torch.compile}~\cite{pytorch2} sets the baseline any fusion must
+beat, and its guard machinery is precisely what one caught candidate
+bypassed. Megakernel compilers~\cite{mpk2025} pursue the logical extreme
+of eliminating dispatch cost altogether. Between hand fusion and
+megakernels sits an undocumented question this paper quantifies: what a
+\emph{framework} charges to route a call to a replacement kernel. Our
+$25{:}1$ dispatch-tax result (Section~\ref{sec:dispatch}) indicates this
+delivery cost, not kernel quality, can be the binding constraint.
+
+\paragraph{Measurement methodology.}
+The systems-benchmarking literature has long catalogued measurement
+pitfalls~\cite{mytkowicz2009,heiser}; we adapt its lessons to a setting
+it rarely addresses---shared GPU clusters where clock locking is
+administratively unavailable---with an interleaved paired-difference
+protocol and machine-checked validity bits
+(Section~\ref{sec:results}). To our knowledge the
+\emph{arms-differentiated} bit (Section~\ref{sec:taxonomy}), which
+invalidates a measurement whose intervention produced no positive
+execution evidence, has no published precedent; we found the failure it
+guards against three times in one project.
 
 \section{System: A Fail-Closed Promotion Pipeline}
-\todo{Stage-by-stage description with trust boundaries: declarative
-workloads; metadata-only capture (symbolic FX $\to$ non-strict export
-$\to$ Dynamo fallback; what is never serialized); pure-tensor allowlist
-and fail-closed rejection; measured-impact ranking; graph-derived spec
-generation; sandboxed autonomous search; write-once run contract;
-independent validation; versioned artifact bundles;
-compatibility-checked dispatch; full-generation A/B; finalization.
-Figure~\ref{fig:pipeline}.}
+\label{sec:system}
+
+Figure~\ref{fig:pipeline} shows the pipeline. Its design principle is
+that every stage rejects by default: an optimization is promoted only by
+affirmatively passing capture, ranking, specification, search,
+validation, packaging, dispatch, and full-generation A/B, and any
+ambiguity at any stage terminates in a machine-readable non-success
+state. We describe the stages in order, emphasizing the trust boundaries.
+
+\begin{figure}[t]
+\centering
+\fbox{\pending{F1: pipeline diagram with trust boundaries (FIGURES.md)}}
+\caption{The promotion pipeline. Shaded regions mark trust boundaries:
+the search sandbox (agent-writable), the fixed harness (read-only to the
+search), and hash-verified artifact payloads. Terminal states are
+\texttt{promoted}, \texttt{rejected}, \texttt{quarantined},
+\texttt{no\_worthwhile\_candidate}, and \texttt{invalid}.}
+\label{fig:pipeline}
+\end{figure}
+
+\paragraph{Declarative workloads.}
+A workload manifest declares one reproducible generation benchmark:
+model identity and revision, task and prompt reference, resolution,
+frame count, steps, seed, dtype, warmup and measured repetitions, and a
+\emph{fidelity policy}---the contract any optimization of this workload
+must satisfy (Section~\ref{sec:tiers}). Manifests contain no code and no
+model-specific callables; adding a model to the system means writing a
+manifest, not an integration.
+
+\paragraph{Metadata-only capture.}
+Graph capture attempts symbolic FX tracing, falls back to non-strict
+\texttt{torch.export}, then to Dynamo capture, recording per-region
+provenance and per-mode failure reasons rather than hiding graph breaks.
+Captured regions contain operator sequences, dependencies, tensor
+signatures, and safe scalar constants only: weights, prompts,
+activations, tensor values, and source code are never serialized, so a
+capture can cross organizational boundaries. Regions containing
+mutation, collectives, data-dependent control flow, or unknown aliasing
+are rejected fail-closed with machine-readable reasons.
+
+\paragraph{Measured impact ranking.}
+Regions are ranked by measured share of end-to-end device time,
+correlated from profiler evidence, with an Amdahl ceiling and a
+configurable impact floor: a candidate whose optimistic end-to-end
+improvement cannot clear the floor is excluded \emph{before} any search
+budget is spent. Following the attribution defects of
+Section~\ref{sec:taxonomy}, ranking distrusts analytic bounds: promotion
+decisions consume only per-artifact isolation trials, and (as of schema
+v3) profiler-derived shares are reconciled against module-level
+invocation counts. When a high-impact parent region is unsafe, ranking
+attempts to derive a validated executable subregion rather than
+discarding the impact, labeling the estimate as a parent-region upper
+bound.
+
+\paragraph{Graph-derived specification.}
+A ranked region becomes a search problem via an executable intermediate
+representation restricted to an allowlisted ATen subset: the IR is
+interpreted to produce an eager reference implementation, a weighted
+production shape corpus from observed frequencies, dtype-appropriate
+tolerances, and a stable graph fingerprint that follows the candidate
+through packaging and dispatch. Specification generation operates only
+on the validated IR---never on arbitrary source from a capture---and
+fails closed on any unsupported operation.
+
+\paragraph{Sandboxed autonomous search.}
+Kernel search runs an autonomous coding agent inside an isolated
+candidate directory: the agent may edit its candidate kernel freely,
+while the repository, harness, specification, corpus, and validation
+policy sit outside its write boundary. The search interface is
+agent-agnostic (any CLI-invocable agent), budgeted per candidate and per
+campaign, and---after the findings of
+Section~\ref{sec:taxonomy}---re-timed by validation under guarded
+dispatch, so that harness-boundary shortcuts discovered by the agent do
+not survive into recorded evidence. Notably, some of our campaigns
+require no language model at all: the caching campaign of
+Section~\ref{sec:tiers} searches a scalar threshold by scripted sweep.
+
+\paragraph{Independent validation.}
+Validation re-executes candidates in isolation against regenerated
+inputs (not replayed captures): correctness across the weighted corpus,
+a shape sweep, numerical stability on fresh allocations, bitwise
+determinism, and edge cases, with optional gradient and
+\texttt{torch.compile} full-graph checks. Performance baselines are
+eager or---the honest default for fusion claims---\texttt{torch.compile}
+with \texttt{fullgraph=True}, recorded as \texttt{baseline\_mode} in
+schema-versioned result records.
+
+\paragraph{Artifacts, dispatch, and differentiation signals.}
+A surviving candidate is packaged as a versioned bundle: a strictly
+validated, metadata-only manifest carrying operation identity, graph
+fingerprint, compatibility constraints (GPU architecture, framework and
+compiler versions, dtype, execution mode), isolated evidence, and a
+hash-verified payload. The runtime loads bundles by compatibility, never
+by name; any mismatch, load failure, or runtime failure falls back to
+the native path with the reason recorded. Each artifact \emph{kind}
+(kernel, attention backend, schedule transform) must declare a
+\emph{positive differentiation signal}---candidate dispatch count,
+effective-backend echo, cache-hit count---which downstream measurement
+requires (Section~\ref{sec:taxonomy}).
+
+\paragraph{Promotion.}
+Promotion consumes only full-generation evidence: an interleaved paired
+A/B (Section~\ref{sec:results}) on the declared workload, the fidelity
+verdict under the workload's declared tier, real dispatch selection with
+zero unexplained fallbacks, and a speedup gate derived from the
+measured Amdahl ceiling rather than a flat threshold
+(\pending{ceiling-derived gate parameters; Phase 3 build}). Finalization
+is write-once: a resumed campaign can never weaken an already finalized
+verdict, and every campaign runs under an immutable run contract with
+fail-closed preflight.
 
 \section{The Promotion Gap}
 \label{sec:gap}
@@ -179,6 +339,37 @@ Post-MLP gated residual & $10.628\times$ & \\
 \end{tabular}
 \end{table}
 
+Our first campaign optimized what the literature suggests and what the
+profiler appears to confirm: memory-bound elementwise and normalization
+chains in Wan's transformer blocks. All three fused operators passed
+every correctness stage and achieved order-of-magnitude isolated
+speedups across their production shape corpora
+(Table~\ref{tab:wan})---and a 50-step generation was indistinguishable
+with and without them. The explanation is not subtle: the fused regions
+account for well under one percent of end-to-end device time each, and a
+$10\times$ improvement of $0.5\%$ is $0.45\%$. What is subtle is how
+completely isolated evaluation obscures this. Nothing in the kernels'
+own evidence---correctness, stability, determinism, roofline
+position---distinguishes them from a valuable optimization. The value
+judgment lives entirely in a quantity the kernel never sees: the
+workload-level share of the region it accelerates.
+
+The second campaign made the arithmetic explicit
+(Table~\ref{tab:ltx-arith}). Four LTX candidates survived validation
+with isolated speedups of $1.11$--$1.12\times$; their aggregate
+end-to-end share was $6.20\%$, so the best possible combined outcome---%
+zero delivery overhead, perfect fidelity---was $1.0064\times$, below the
+campaign's $1.01\times$ gate. No search, however good, could have
+promoted these candidates; the failure was target selection, and the
+pipeline's packaging stage initially compounded it by consulting an
+analytic Amdahl bound ($\mathrm{share} \times 0.9$, assuming the
+region's cost falls to zero) that overstated the realizable return of a
+$1.115\times$ kernel by more than $8\times$. The remedy that survived
+contact with evidence: promotion consumes only \emph{measured}
+per-artifact isolation trials, and ranking treats analytic ceilings as
+exclusion filters (a candidate that cannot win even optimistically is
+skipped), never as promotion evidence.
+
 \begin{table}[h]
 \centering
 \caption{The arithmetic of sub-percent regions: four validated LTX
@@ -199,17 +390,73 @@ mk-b6cb64f9 & 0.922\% & $1.1064\times$ & 0.089\% \\
 \end{tabular}
 \end{table}
 
-\todo{Measured- vs.\ estimated-impact ranking: the Amdahl bound overstated
-a $1.115\times$ kernel's return by $>8\times$; per-artifact isolation
-trials as the fix.}
+The promotion gap generalizes beyond our system. Any evaluation whose
+unit is the operator will systematically reward exactly the candidates
+in Tables~\ref{tab:wan} and~\ref{tab:ltx-arith}: they are the easiest
+regions to fuse, the easiest wins to measure, and the least likely to
+matter. The regions that do matter---attention at $27$--$35\%$ of
+end-to-end time on our Wan workload, $15.13\%$ on LTX---are precisely
+those with strong existing baselines where honest evaluation most often
+returns a negative verdict (Section~\ref{sec:tiers}).
 
 \section{The Dispatch Tax}
 \label{sec:dispatch}
-\todo{Accounting methodology. Eager FX graph replay: $3.104$\,ms overhead
-vs.\ $124$\,\textmu s saving per call; transformer at 384
-calls/generation $\Rightarrow$ 1.192\,s, 32.4\% of e2e; VAE contrast
-(4.7 calls, 0.39\%). The fix: guarded compiled dispatch via registered
-ops; before/after measurement records. Figure: waterfall.}
+
+A kernel's value is bounded not only by its region's share but by what
+the framework charges to deliver it. We attribute delivery cost per call
+as
+\[
+\text{overhead/call} = \frac{\Delta T_{\text{generation}}}{{\text{calls}}} + \text{expected saving/call},
+\]
+measured from paired generations with and without the artifact
+dispatching. For the promoted LTX transformer artifact the accounting
+was stark: the kernel saved $124$\,\textmu s per call
+($259.05 \to 134.90$\,\textmu s), while delivery cost $3.104$\,ms per
+call---a $25{:}1$ loss. At 384 transformer calls per generation this
+overhead totaled $1.192$\,s, $32.4\%$ of end-to-end latency; the same
+artifact machinery on the VAE ($4.7$ calls per generation) cost an
+invisible $0.39\%$. Identical delivery, opposite economics
+(Figure~\ref{fig:breakeven}): dispatch overhead is a per-call constant,
+so the regions most worth optimizing---hot, frequently invoked---are
+exactly the regions that amplify it.
+
+Two components were implementation defects, found and fixed: a
+diagnostic parameter snapshot built three times per call, and per-call
+rediscovery of the rewritten graph's placeholders. The dominant term was
+structural: to fuse a subregion, the integration replaced the enclosing
+block's forward with an eager FX \texttt{GraphModule} replay, paying
+Python-level graph interpretation on every invocation of a hot module.
+The fix replaced replay-based delivery with guarded compiled dispatch:
+registered custom operations that \texttt{torch.compile} traces
+through, guards intact. Post-fix measurement on sm100 shows
+\pending{post-fix overhead per call and the re-run verdicts of the four
+Table~\ref{tab:ltx-arith} artifacts, from
+docs/dispatch-overhead records; Figure~\ref{fig:tax}}.
+
+Two lessons travel. First, delivery overhead must be measured and
+published alongside kernel speedups; a fusion evaluated without its
+dispatch path is evaluated in a fiction. Second, the guard evaluation an
+integration is tempted to skip (Section~\ref{sec:taxonomy}) is part of
+the honest price of delivery: a speedup that exists only without guards
+is not a speedup.
+
+\begin{figure}[t]
+\centering
+\fbox{\pending{F2: dispatch waterfall, before/after (FIGURES.md)}}
+\caption{Per-call accounting for the LTX transformer artifact: saving
+versus delivery overhead, before and after replacing eager graph replay
+with guarded compiled dispatch.}
+\label{fig:tax}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\fbox{\pending{F3: break-even curve (FIGURES.md)}}
+\caption{Net value of an artifact as a function of calls per generation
+and per-call overhead. The transformer and VAE artifacts sit on opposite
+sides of the break-even frontier with identical delivery machinery.}
+\label{fig:breakeven}
+\end{figure}
 
 \section{What Agents Get Wrong}
 \label{sec:taxonomy}
@@ -368,21 +615,53 @@ configuration). The trajectory across our campaigns is consistent:
 eventually caught earlier by checking}, and the system's reliability
 improved exactly as fast as claims moved from prose into
 machine-validated records.
-\todo{Per-gate catch-rate table from experiment-store backfill
+\pending{T4/F6: per-gate catch-rate table from experiment-store backfill
 (EVIDENCE\_MAP gap 3).}
 
 \section{Fidelity Tiers and Approximate Optimizations}
 \label{sec:tiers}
-\todo{Contract design: Tier~0 byte-equal, Tier~1 numeric tolerance,
-Tier~2 perceptual budget declared per workload (fixed-seed reference
-frames, SSIM floor, LPIPS ceiling). Promotion carries the tier and the
-margins.}
+
+Bitwise parity is the right default contract and the wrong universal
+one: it structurally excludes every approximation with a real
+speed--quality trade---quantized attention, sparse attention, step
+caching---which is where the large end-to-end factors in the video
+literature live. We therefore attach a \emph{fidelity tier} to each
+workload: \textbf{Tier 0} (bitwise equality), \textbf{Tier 1} (declared
+numeric tolerance; the default when a workload declares nothing), and
+\textbf{Tier 2} (a perceptual budget: worst-frame SSIM floor and LPIPS
+ceiling against fixed-seed reference frames, thresholds declared per
+workload). A third, \emph{advisory}, level records metrics without ever
+auto-promoting. At Tier 2 the fidelity verdict replaces the parity
+check---otherwise every non-bit-exact candidate quarantines before its
+quality evidence is read---and a promoted artifact's manifest carries
+its tier and measured margins, so a consumer knows exactly what was
+promised. Both directions are tested: a deliberately lossy control is
+rejected, and a known-good approximation promotes with recorded margins.
+
+\paragraph{Attention under Tier 2.}
+Attention is the largest honest target our ranking identifies
+($27$--$35\%$ of end-to-end device time on the Wan workload, ceiling
+$1.37$--$1.54\times$; $15.13\%$ on LTX, ceiling $1.178\times$---excluded
+by the impact floor before any budget was spent). Table~\ref{tab:attention}
+reports the first campaign: both published candidates were \emph{slower}
+than the pinned FlashAttention baseline, and both failed the SSIM floor
+while passing the LPIPS ceiling. The regime matters: SageAttention v1's
+quantize/dequantize overhead exceeds its savings against a well-tuned
+sm100 baseline, and zero-shot sparse attention pays tile selection and
+gather costs that its published gains---obtained with VSA-finetuned
+checkpoints---do not. A campaign without an enforced
+backend-differentiation signal would have measured none of this: all
+three optional backends were absent from the cluster's base image, and
+the framework's selector silently substitutes FlashAttention on import
+error, so an unguarded A/B would have measured the baseline twice and
+reported $\sim 1.00\times$ under each candidate's name.
 
 \begin{table}[h]
 \centering
 \caption{Attention backend campaign (Wan~2.1 T2V 1.3B, 480p, 49 frames,
 20 steps, GB200/sm100; baseline pinned to FlashAttention; 15 timed runs
-per arm). Gate: $\geq 1.3\times$, SSIM $\geq 0.97$, LPIPS $\leq 0.05$.}
+per arm; effective backend verified). Gate: $\geq 1.3\times$,
+SSIM $\geq 0.97$, LPIPS $\leq 0.05$.}
 \label{tab:attention}
 \begin{tabular}{lrrrl}
 \toprule
@@ -390,43 +669,182 @@ Candidate & Median speedup & Worst SSIM & Worst LPIPS & Verdict \\
 \midrule
 SageAttention 1.0.6 & $0.8031\times$ & 0.9353 & 0.0378 & rejected \\
 Video Sparse Attention (zero-shot) & $0.5169\times$ & 0.9527 & 0.0253 & rejected \\
+\pending{SageAttention2/2++ FP8} & & & & \\
+\pending{best candidate on 720p/121f workload} & & & & \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\todo{Metric-divergence analysis: LPIPS admits both, SSIM rejects both;
-argument for declaring both. Regime analysis: why these candidates lose
-here (v1 quantization overhead on sm100; VSA tile selection cost at 81k
-tokens; VSA's reported gains require VSA-finetuned checkpoints).
-[PENDING: attention round 2 -- SageAttention2/2++, VSA on FastWan,
-720p/121f. PENDING: caching campaign -- first Tier-2 promotion.]}
+\paragraph{Metric disagreement.}
+The two rejections disagree instructively: VSA is perceptually closer to
+the baseline than SageAttention on both metrics, while being far slower.
+And both candidates pass LPIPS while failing SSIM---a budget gating on
+LPIPS alone admits both; on SSIM alone, rejects both without recording
+that they are perceptually close (Figure~\ref{fig:metrics}). We
+therefore declare both metrics, gate on their conjunction, and publish
+margins rather than binary verdicts. We regard the empirical
+characterization of which metric families track human judgment for
+\emph{acceleration} artifacts (as opposed to generation quality) as
+open, and our fixed-seed frame sets make the question testable.
 
-\section{End-to-End Results}
+\begin{figure}[t]
+\centering
+\fbox{\pending{F4: SSIM/LPIPS scatter with gate box (FIGURES.md)}}
+\caption{Worst-frame SSIM versus LPIPS per candidate and workload. Both
+rejected attention candidates fall in the LPIPS-pass/SSIM-fail quadrant.}
+\label{fig:metrics}
+\end{figure}
+
+\paragraph{Schedule transforms: caching without an LLM.}
+The first artifact kind that wraps the denoising loop rather than a
+graph region is input-similarity caching: skip a step's computation when
+an accumulated input-distance signal falls below a threshold, with three
+structural guarantees enforced in the artifact---the first step is never
+a cache hit, no state crosses generations, and consecutive skips are
+capped. Distance accumulates and resets on compute, since per-step
+comparison lets unbounded drift look locally safe. The searched
+parameter is a scalar threshold, so the campaign is a scripted sweep
+(coarse grid, then bisection), each point one paired A/B plus a Tier-2
+fidelity verdict---no language model in the loop. Cache hits per
+generation serve as the kind's differentiation signal.
+\pending{Caching sweep results on wan-480p and ltx-480p:
+Figure~\ref{fig:caching}, terminal verdicts, promoted threshold(s) or
+evidence-backed no\_worthwhile\_candidate; docs/CACHING\_CAMPAIGN\_RESULTS.md.}
+
+\begin{figure}[t]
+\centering
+\fbox{\pending{F5: caching threshold sweep, speedup vs.\ quality (FIGURES.md)}}
+\caption{Input-similarity caching sweep: paired end-to-end speedup (with
+CI) and worst-frame quality metrics as functions of the cache threshold.
+\pending{per-workload panels}}
+\label{fig:caching}
+\end{figure}
+
+\section{End-to-End Results and Measurement Methodology}
 \label{sec:results}
-\todo{LTX2 promoted artifact: $3.3646 \to 3.0991$\,s median
-($1.0857\times$), 15-run A/B; independent replication $1.2514\times$
-[link raw record]; $6{,}143$ dispatches, zero fallbacks, byte-identical
-frames. Support matrix snapshot (model $\times$ workload $\times$ arch)
-[PENDING sm90]. Variance methodology: native-arm CoV ceiling, locked
-clocks, exclusive nodes; before/after spread.}
 
-\section{Limitations and Discussion}
-\todo{Single-framework integration depth (FastVideo) vs.\ what
-generalizes; regimes not covered (multi-GPU, training); what ``verified''
-does and does not claim; cost of the pipeline itself.}
+\paragraph{Measurement on clusters you do not control.}
+Our cluster's GPUs idle at 285\,MHz against a 2062\,MHz maximum, clock
+locking is administratively unavailable, and exclusive-node allocation
+did not collapse run-to-run spread (5.57\% CV against 4.74--7.37\%
+baseline). Sequential per-arm A/Bs are ungateable under these
+conditions, and applying that standard retroactively invalidated three
+of our own previously reported numbers ($1.0274\times$, $1.2459\times$,
+$1.1155\times$). The protocol that replaced them: sustained-load warmup
+until the recorded clock trace plateaus (observed: max boost held
+through every timed run), interleaved arm scheduling, and
+paired-difference statistics---median paired delta, bootstrap CI, and a
+Wilcoxon signed-rank test---with machine-checked validity bits
+(interleaving, clock trace present, plateau reached, native-arm CV
+ceiling, and \texttt{arms\_differentiated}). Where variance was already
+negligible the protocols agree, as they should: the one A/B measured
+under both gives $0.8106\times$ [$0.8091, 0.8111$] paired against
+$0.8031\times$ sequential at 0.04\% native CV
+(Figure~\ref{fig:protocol}).
+
+\begin{figure}[t]
+\centering
+\fbox{\pending{F7: clock trace + paired vs sequential comparison (FIGURES.md)}}
+\caption{Top: recorded clock trace of a timed job---idle, warmup ramp,
+plateau held through timed runs. Bottom: paired versus sequential
+estimates on the same A/B, and the three sequential-protocol numbers
+this paper retracts.}
+\label{fig:protocol}
+\end{figure}
+
+\paragraph{The promoted artifact.}
+\pending{GAP 7 decides this paragraph. Written for the confirm case;
+rewrite honestly if it retracts. The promoted LTX2 transformer artifact:
+original evidence $3.3646 \to 3.0991$\,s median ($1.0857\times$) over a
+15-run A/B, independent replication $1.2514\times$, $6{,}143$ dispatches,
+zero fallbacks, byte-identical frames --- re-validated under the paired
+protocol with candidate\_calls asserted:
+[paired delta, CI, arms\_differentiated=true, job ID].}
+The first re-validation attempt is itself a result: it produced a
+conclusive-looking $0.9011\times$ that measured nothing
+(Section~\ref{sec:taxonomy}), and the guard it motivated is now a
+precondition for every number in this section.
+
+\paragraph{Support matrix.}
+Support claims are generated from evidence, never asserted: a model
+$\times$ workload $\times$ architecture cell reports \texttt{promoted},
+\texttt{no\_worthwhile\_candidate}, a named rejection, or a named
+capture blocker, each linked to its records, regenerated in CI.
+Table~\ref{tab:matrix} shows the snapshot at submission.
+\pending{T5 from docs/support\_matrix.json, including sm90 (H100) rows
+and caching verdicts. Cross-model rows (e.g.\ FastWan+VSA vs.\ Wan) are
+labeled as cross-model comparisons, never backend A/Bs.}
+
+\begin{table}[h]
+\centering
+\caption{Support matrix snapshot: verdicts are generated from committed
+evidence. \pending{populate from support\_matrix.json at submission}}
+\label{tab:matrix}
+\begin{tabular}{llll}
+\toprule
+Model / workload & sm100 (GB200) & sm90 (H100) & Evidence \\
+\midrule
+LTX2 480p & \pending{} & \pending{} & \pending{} \\
+Wan 2.1 1.3B 480p & \pending{} & \pending{} & \pending{} \\
+Wan 2.1 720p/121f & \pending{} & \pending{} & \pending{} \\
+FastWan (VSA regime) & \pending{} & \pending{} & \pending{} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Limitations}
+\label{sec:limitations}
+
+Our deep integration is one framework (FastVideo) on one primary
+architecture (sm100; sm90 \pending{status at submission}), and single-GPU
+inference only; the pipeline's contracts are designed to generalize, but
+we have not demonstrated cross-framework portability of promoted
+artifacts. Perceptual gates inherit the limitations of their metrics:
+Section~\ref{sec:tiers} shows SSIM and LPIPS disagreeing systematically,
+and our conjunction gate is conservative rather than validated against
+human judgment. The autonomous-search economics (token cost per promoted
+artifact) are observed but not systematically studied---several of our
+strongest results required no LLM search at all, which is itself a
+finding about where such search is worth buying. Finally, our negative
+results are regime-specific by construction: they show published methods
+losing \emph{on these workloads under these baselines}, not that the
+methods are without value in their intended regimes.
 
 \section{Conclusion}
-\todo{}
+
+Kernel generation is no longer the bottleneck; believing a kernel is.
+Across every campaign we ran, the scarce resource was not candidate
+implementations but \emph{trustworthy evidence about them}: what a
+candidate's region is worth end to end, what its delivery costs, whether
+its speedup survives guards, whether its quality loss fits a declared
+budget, and whether the experiment that measured it actually ran. The
+promotion pipeline we describe makes each of those questions a
+machine-checked gate, and the result is a system whose failures---
+reported here at the same resolution as its successes---were caught
+before they shipped. We believe this layer is what the coming ecosystem
+of agent-optimized software is missing, and we release ours in full.
 
 \section*{Acknowledgments}
-\todo{Agent tooling disclosure; GPU resources.}
+\todo{Agent tooling disclosure (code written by coding agents under
+human-directed campaigns; all measurements machine-recorded); GPU
+resources; colleagues.}
 
-\section*{Reproducibility}
-Every quantitative claim traces to a committed, machine-generated
-measurement record (SLURM job IDs, environment identity, schema-versioned
-JSON) in the public repository. \todo{repo tag + evidence index link.}
+\section*{Reproducibility statement}
+Every quantitative claim in this paper traces to a committed,
+machine-generated measurement record (SLURM job IDs, environment
+identity, schema-versioned JSON) in the public repository, indexed by
+\texttt{docs/paper/EVIDENCE\_MAP.md}. \todo{repo tag \texttt{paper-v1} +
+archival DOI.}
 
 \bibliographystyle{plain}
 \bibliography{refs}
+
+\appendix
+\section{Workload manifest example}
+\todo{one full manifest, annotated.}
+\section{Artifact bundle manifest example}
+\todo{one promoted bundle manifest with fidelity margins, redacted paths.}
+\section{Measurement record schema}
+\todo{schema v3 field table with the validity bits of T6.}
 
 \end{document}
